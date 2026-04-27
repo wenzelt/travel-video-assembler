@@ -62,7 +62,7 @@ def cache_key(path: Path) -> str:
     abs_path = str(path.resolve())
     mtime_ns = path.stat().st_mtime_ns
     raw = f"{abs_path}:{mtime_ns}"
-    return hashlib.sha1(raw.encode()).hexdigest()
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()
 
 
 def metadata_cache_get(key: str) -> dict | None:
@@ -74,6 +74,7 @@ def metadata_cache_get(key: str) -> dict | None:
     Returns:
         The previously stored dict, or ``None`` when there is no entry.
     """
+    # Intentionally does not call _ensure() — a read must not create the directory.
     meta_dir = _cache_root() / "metadata"
     cache_file = meta_dir / f"{key}.json"
     if not cache_file.exists():

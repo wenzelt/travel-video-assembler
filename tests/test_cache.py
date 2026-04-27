@@ -110,9 +110,7 @@ def test_metadata_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert result == data
 
 
-def test_metadata_round_trip_complex_data(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metadata_round_trip_complex_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Round-trip must preserve nested structures, lists, and None values."""
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
     data = {
@@ -127,9 +125,7 @@ def test_metadata_round_trip_complex_data(
     assert result == data
 
 
-def test_metadata_set_overwrites_existing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metadata_set_overwrites_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A second set for the same key must overwrite the previous value."""
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
     metadata_cache_set("overwrite_key", {"v": 1})
@@ -138,9 +134,7 @@ def test_metadata_set_overwrites_existing(
     assert result == {"v": 2}
 
 
-def test_metadata_cache_file_is_valid_json(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metadata_cache_file_is_valid_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The file written by metadata_cache_set must be valid JSON."""
     cache_root = tmp_path / "cache"
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(cache_root))
@@ -169,18 +163,14 @@ def test_normalized_path_is_under_normalized_subdir(
     assert p.parts[-2] == "normalized"
 
 
-def test_normalized_path_has_mkv_extension(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_normalized_path_has_mkv_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """normalized_path() must return a .mkv path."""
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
     p = normalized_path("somekey")
     assert p.suffix == ".mkv"
 
 
-def test_map_path_is_under_maps_subdir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_map_path_is_under_maps_subdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """map_path() must return a path inside <cache_root>/maps/."""
     cache_root = tmp_path / "cache"
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(cache_root))
@@ -188,18 +178,14 @@ def test_map_path_is_under_maps_subdir(
     assert p.parts[-2] == "maps"
 
 
-def test_map_path_has_png_extension(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_map_path_has_png_extension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """map_path() must return a .png path."""
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
     p = map_path("somekey")
     assert p.suffix == ".png"
 
 
-def test_path_functions_incorporate_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_path_functions_incorporate_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The key must appear in the filename returned by both path functions."""
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
     key = "unique_test_key_abc123"
@@ -212,9 +198,7 @@ def test_path_functions_incorporate_key(
 # ---------------------------------------------------------------------------
 
 
-def test_metadata_dirs_created_on_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metadata_dirs_created_on_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """metadata_cache_set() must create the metadata subdir if it does not exist."""
     cache_root = tmp_path / "new_cache"
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(cache_root))
@@ -225,9 +209,7 @@ def test_metadata_dirs_created_on_set(
     assert (cache_root / "metadata").is_dir()
 
 
-def test_metadata_dirs_created_on_get(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metadata_dirs_created_on_get(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """metadata_cache_get() must not raise even if cache dir does not exist yet."""
     cache_root = tmp_path / "new_cache"
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(cache_root))
@@ -237,9 +219,7 @@ def test_metadata_dirs_created_on_get(
     assert result is None
 
 
-def test_normalized_path_dir_created(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_normalized_path_dir_created(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """normalized_path() must ensure <cache_root>/normalized/ exists."""
     cache_root = tmp_path / "new_cache"
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(cache_root))
@@ -260,9 +240,7 @@ def test_map_path_dir_created(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 # ---------------------------------------------------------------------------
 
 
-def test_env_var_sets_custom_cache_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_env_var_sets_custom_cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """When TRAVEL_VIDEO_CACHE_DIR is set, that directory is used as cache root."""
     custom_root = tmp_path / "my_custom_cache"
     monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(custom_root))
@@ -289,9 +267,7 @@ def test_env_var_different_dirs_are_isolated(
     assert result is None
 
 
-def test_default_cache_dir_without_env_var(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_default_cache_dir_without_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Without the env var, cache root defaults to .travel_video_cache/ relative to cwd."""
     monkeypatch.delenv("TRAVEL_VIDEO_CACHE_DIR", raising=False)
     monkeypatch.chdir(tmp_path)
