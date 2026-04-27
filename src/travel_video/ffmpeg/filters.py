@@ -5,6 +5,8 @@ No subprocess calls — every function returns a string only.
 
 from __future__ import annotations
 
+from typing import Literal
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -35,8 +37,8 @@ _TRANSPOSE_PREFIX: dict[int, str] = {
 def vertical_normalize(
     width: int,
     height: int,
-    rotation: int = 0,
-    mode: str = "blur",
+    rotation: Literal[0, 90, 180, 270] = 0,
+    mode: Literal["blur", "crop", "bars"] = "blur",
 ) -> str:
     """Return a filtergraph string that converts any clip to 1080×1920.
 
@@ -80,9 +82,10 @@ def vertical_normalize(
             f"scale={_TARGET_W}:{_TARGET_H}:force_original_aspect_ratio=decrease,"
             f"pad={_TARGET_W}:{_TARGET_H}:(ow-iw)/2:(oh-ih)/2:black[v]"
         )
-    else:
-        # "blur" is the default
+    elif mode == "blur":
         core = _BLUR_GRAPH
+    else:
+        raise ValueError(f"Unknown mode {mode!r}. Expected 'blur', 'crop', or 'bars'.")
 
     return f"{transpose_prefix}{core}"
 
@@ -141,10 +144,7 @@ def crossfade_video(
     str
         FFmpeg xfade filter fragment.
     """
-    return (
-        f"[{in_label}]xfade=transition=fade:"
-        f"duration={duration_s}:offset={offset_s}[{out_label}]"
-    )
+    return f"[{in_label}]xfade=transition=fade:duration={duration_s}:offset={offset_s}[{out_label}]"
 
 
 def crossfade_audio(
@@ -199,7 +199,4 @@ def black_screen(
     str
         FFmpeg filtergraph fragment (video and audio separated by ``;``).
     """
-    return (
-        f"color=c=black:s={width}x{height}:d={duration_s}:r=30[v];"
-        f"aevalsrc=0:d={duration_s}[a]"
-    )
+    return f"color=c=black:s={width}x{height}:d={duration_s}:r=30[v];aevalsrc=0:d={duration_s}[a]"

@@ -220,3 +220,38 @@ def test_black_screen_custom() -> None:
     """black_screen with custom args reflects those values in the output."""
     result = black_screen(duration_s=5.0, width=720, height=1280)
     assert result == "color=c=black:s=720x1280:d=5.0:r=30[v];aevalsrc=0:d=5.0[a]"
+
+
+# ---------------------------------------------------------------------------
+# 13. vertical_normalize — rotation=180 with non-blur modes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_vertical_normalize_rotation_180_crop() -> None:
+    """A 1920×1080 clip rotated 180° with mode='crop' prepends transpose×2."""
+    result = vertical_normalize(width=1920, height=1080, rotation=180, mode="crop")
+    expected = (
+        "transpose=1,transpose=1,"
+        "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[v]"
+    )
+    assert result == expected
+
+
+@pytest.mark.unit
+def test_vertical_normalize_rotation_180_bars() -> None:
+    """A 1920×1080 clip rotated 180° with mode='bars' prepends transpose×2."""
+    result = vertical_normalize(width=1920, height=1080, rotation=180, mode="bars")
+    expected = (
+        "transpose=1,transpose=1,"
+        "scale=1080:1920:force_original_aspect_ratio=decrease,"
+        "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[v]"
+    )
+    assert result == expected
+
+
+@pytest.mark.unit
+def test_vertical_normalize_invalid_mode_raises() -> None:
+    """An unrecognized mode raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown mode"):
+        vertical_normalize(width=1920, height=1080, mode="invalid")  # type: ignore[arg-type]
