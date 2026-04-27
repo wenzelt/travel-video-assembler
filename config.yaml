@@ -1,0 +1,25 @@
+output:
+  resolution: "1080x1920"
+  container: mkv
+
+video:
+  encoder: h264_videotoolbox
+  bitrate: 12M
+
+transitions:
+  clip_crossfade_seconds: 0.5
+  day_break_seconds: 3
+
+audio:
+  highpass_hz: 120
+  denoise: afftdn
+  loudnorm: true
+
+overlays:
+  location_label:
+    enabled: true
+    position: bottom_right
+
+  mini_map:
+    enabled: true
+    probability: 0.25

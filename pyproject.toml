@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "travel-video"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "pydantic>=2",
+    "pyyaml>=6",
+    "pillow>=10",
+    "geopy>=2",
+]
+
+[project.scripts]
+travel-video = "travel_video.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/travel_video"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=travel_video --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.4",
+]
