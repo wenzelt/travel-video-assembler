@@ -392,3 +392,175 @@ def test_inspect_exiftool_failure_shows_error(tmp_path: Path) -> None:
         or "width" in result.output.lower()
         or result.exit_code == 0
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. render command — help and validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_render_help_exits_zero() -> None:
+    """render --help exits 0."""
+    result = runner.invoke(app, ["render", "--help"])
+    assert result.exit_code == 0
+
+
+@pytest.mark.unit
+def test_render_missing_input_exits_nonzero(tmp_path: Path) -> None:
+    """render with a non-existent --input dir exits non-zero."""
+    missing = tmp_path / "does_not_exist"
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("output:\n  container: mkv\n")
+    result = runner.invoke(
+        app,
+        [
+            "render",
+            "--input",
+            str(missing),
+            "--output",
+            str(tmp_path / "out.mkv"),
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert result.exit_code != 0
+
+
+@pytest.mark.unit
+def test_render_missing_config_exits_nonzero(tmp_path: Path) -> None:
+    """render with existing --input dir but missing --config file exits non-zero."""
+    input_dir = tmp_path / "clips"
+    input_dir.mkdir()
+    missing_cfg = tmp_path / "no_such_config.yaml"
+    result = runner.invoke(
+        app,
+        [
+            "render",
+            "--input",
+            str(input_dir),
+            "--output",
+            str(tmp_path / "out.mkv"),
+            "--config",
+            str(missing_cfg),
+        ],
+    )
+    assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# 7. render command — no clips early return
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_render_no_clips_returns_early(tmp_path: Path) -> None:
+    """render prints a warning and returns early (without calling renderer) when no clips found."""
+    input_dir = tmp_path / "clips"
+    input_dir.mkdir()
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("output:\n  container: mkv\n")
+
+    with (
+        patch("travel_video.cli.scanner.scan", return_value=[]),
+        patch("travel_video.cli.Config.load") as mock_cfg,
+        patch("travel_video.cli.renderer.render") as mock_renderer,
+    ):
+        mock_cfg.return_value = MagicMock()
+        result = runner.invoke(
+            app,
+            [
+                "render",
+                "--input",
+                str(input_dir),
+                "--output",
+                str(tmp_path / "out.mkv"),
+                "--config",
+                str(cfg_file),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_renderer.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 8. render command — happy path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_render_calls_renderer(tmp_path: Path) -> None:
+    """render calls renderer.render with the correct output path and dry_run=False."""
+    input_dir = tmp_path / "clips"
+    input_dir.mkdir()
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("output:\n  container: mkv\n")
+    output_path = tmp_path / "out" / "travel.mkv"
+
+    clip_path = input_dir / "clip1.mp4"
+    clip = _make_clip(clip_path, day=1)
+    timeline = [clip]
+    cfg_obj = MagicMock()
+
+    with (
+        patch("travel_video.cli.scanner.scan", return_value=[clip_path]),
+        patch("travel_video.cli.metadata.extract", return_value=clip),
+        patch("travel_video.cli.planner.build_timeline", return_value=timeline),
+        patch("travel_video.cli.Config.load", return_value=cfg_obj),
+        patch("travel_video.cli.renderer.render") as mock_renderer,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "render",
+                "--input",
+                str(input_dir),
+                "--output",
+                str(output_path),
+                "--config",
+                str(cfg_file),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_renderer.assert_called_once_with(timeline, cfg_obj, output_path, dry_run=False)
+
+
+@pytest.mark.unit
+def test_render_dry_run_flag(tmp_path: Path) -> None:
+    """render calls renderer.render with dry_run=True when --dry-run is passed."""
+    input_dir = tmp_path / "clips"
+    input_dir.mkdir()
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("output:\n  container: mkv\n")
+    output_path = tmp_path / "out.mkv"
+
+    clip_path = input_dir / "clip1.mp4"
+    clip = _make_clip(clip_path, day=1)
+    timeline = [clip]
+    cfg_obj = MagicMock()
+
+    with (
+        patch("travel_video.cli.scanner.scan", return_value=[clip_path]),
+        patch("travel_video.cli.metadata.extract", return_value=clip),
+        patch("travel_video.cli.planner.build_timeline", return_value=timeline),
+        patch("travel_video.cli.Config.load", return_value=cfg_obj),
+        patch("travel_video.cli.renderer.render") as mock_renderer,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "render",
+                "--input",
+                str(input_dir),
+                "--output",
+                str(output_path),
+                "--config",
+                str(cfg_file),
+                "--dry-run",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_renderer.assert_called_once_with(timeline, cfg_obj, output_path, dry_run=True)

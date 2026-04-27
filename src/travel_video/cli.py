@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from travel_video import metadata, planner, scanner
+from travel_video import metadata, planner, renderer, scanner
 from travel_video.config import Config
 from travel_video.logging_setup import setup_logging
 from travel_video.models import Clip, DaySeparator
@@ -51,7 +51,63 @@ def render(
 ) -> None:
     """Render all clips in INPUT into a single travel video at OUTPUT."""
     setup_logging(verbose)
-    raise NotImplementedError("render not yet implemented")
+
+    # --- Validate --input ---------------------------------------------------
+    if not input.exists() or not input.is_dir():
+        raise typer.BadParameter(
+            f"Input path '{input}' does not exist or is not a directory.",
+            param_hint="'--input'",
+        )
+
+    # --- Validate --config ---------------------------------------------------
+    if not config.exists():
+        raise typer.BadParameter(
+            f"Config file '{config}' does not exist.",
+            param_hint="'--config'",
+        )
+
+    # --- Ensure output parent directory exists --------------------------------
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    # --- Load config ----------------------------------------------------------
+    cfg = Config.load(config)
+
+    # --- Scan -----------------------------------------------------------------
+    paths = scanner.scan(input)
+
+    # --- Early return when no clips found ------------------------------------
+    if not paths:
+        console.print("[yellow]Warning: no video clips found in the input directory.[/yellow]")
+        return
+
+    # --- Extract metadata with progress bar ----------------------------------
+    clips: list[Clip] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task("Reading metadata…", total=None)
+        for path in paths:
+            progress.update(task_id, description=f"Reading {path.name}…")
+            clips.append(metadata.extract(path))
+
+    # --- Build timeline -------------------------------------------------------
+    timeline = planner.build_timeline(clips)
+
+    # --- Print summary --------------------------------------------------------
+    day_set = {c.creation_time.date() for c in clips}
+    console.print(
+        f"Clips: [bold]{len(clips)}[/bold]  "
+        f"Days: [bold]{len(day_set)}[/bold]"
+    )
+
+    # --- Render ---------------------------------------------------------------
+    renderer.render(timeline, cfg, output, dry_run=dry_run)
+
+    # --- Success message ------------------------------------------------------
+    console.print(f"[green]Output:[/green] {output}")
 
 
 @app.command()
