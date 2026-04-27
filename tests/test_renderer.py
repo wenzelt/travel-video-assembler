@@ -14,6 +14,7 @@ import pytest
 
 from travel_video.config import Config
 from travel_video.models import Clip, DaySeparator
+from travel_video.renderer import render
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,7 +81,6 @@ def test_single_clip_normalize_and_concat(
         patch("travel_video.renderer.commands.concat_with_xfade") as mock_concat,
         patch("travel_video.renderer.commands.run") as mock_run,
     ):
-        from travel_video.renderer import render
 
         render([clip], config, output)
 
@@ -125,7 +125,6 @@ def test_two_clips_both_normalized(
         patch("travel_video.renderer.commands.concat_with_xfade") as mock_concat,
         patch("travel_video.renderer.commands.run"),
     ):
-        from travel_video.renderer import render
 
         render(timeline, config, output)
 
@@ -164,7 +163,6 @@ def test_clip_daysep_clip_separator_in_segments(
         patch("travel_video.renderer.commands.concat_with_xfade") as mock_concat,
         patch("travel_video.renderer.commands.run") as mock_run,
     ):
-        from travel_video.renderer import render
 
         render(timeline, config, output)
 
@@ -218,7 +216,6 @@ def test_cache_hit_skips_normalization(
         patch("travel_video.renderer.commands.concat_with_xfade"),
         patch("travel_video.renderer.commands.run"),
     ):
-        from travel_video.renderer import render
 
         render([clip], config, output)
 
@@ -250,7 +247,6 @@ def test_dry_run_propagated_to_all_commands(
         patch("travel_video.renderer.commands.concat_with_xfade") as mock_concat,
         patch("travel_video.renderer.commands.run") as mock_run,
     ):
-        from travel_video.renderer import render
 
         render(timeline, config, output, dry_run=True)
 
@@ -301,7 +297,6 @@ def test_day_separator_cache_hit_skips_generation(
         patch("travel_video.renderer.commands.concat_with_xfade"),
         patch("travel_video.renderer.commands.run") as mock_run,
     ):
-        from travel_video.renderer import render
 
         render(timeline, config, output)
 
@@ -330,7 +325,6 @@ def test_concat_receives_correct_config_params(
         patch("travel_video.renderer.commands.concat_with_xfade") as mock_concat,
         patch("travel_video.renderer.commands.run"),
     ):
-        from travel_video.renderer import render
 
         render([_make_clip(clip_file)], config, output)
 
@@ -360,7 +354,6 @@ def test_empty_timeline(
         patch("travel_video.renderer.commands.concat_with_xfade") as mock_concat,
         patch("travel_video.renderer.commands.run"),
     ):
-        from travel_video.renderer import render
 
         render([], config, output)
 
