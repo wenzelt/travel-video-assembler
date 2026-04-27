@@ -1,0 +1,12 @@
+.worktrees/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.travel_video_cache/
+output/
+.pytest_cache/
+*.egg-info/
+dist/
+.coverage
+htmlcov/
