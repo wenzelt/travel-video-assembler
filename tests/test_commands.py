@@ -50,8 +50,9 @@ def test_run_nonzero_raises_ffmpeg_error() -> None:
     mock_result.stderr = b"some ffmpeg error"
     mock_result.args = ["ffmpeg", "-version"]
 
-    with patch("subprocess.run", return_value=mock_result), pytest.raises(
-        FFmpegError, match="FFmpeg exited with code 1"
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        pytest.raises(FFmpegError, match="FFmpeg exited with code 1"),
     ):
         run(["-version"])
 
@@ -68,8 +69,8 @@ def test_run_nonzero_error_is_runtime_error() -> None:
 
 
 @pytest.mark.unit
-def test_run_dry_run_does_not_call_subprocess(capsys: pytest.CaptureFixture[str]) -> None:
-    """run(dry_run=True) prints the command and does NOT invoke subprocess.run."""
+def test_run_dry_run_does_not_call_subprocess() -> None:
+    """run(dry_run=True) does NOT invoke subprocess.run."""
     with patch("subprocess.run") as mock_sub:
         result = run(["-i", "input.mp4", "output.mp4"], dry_run=True)
 
@@ -78,15 +79,18 @@ def test_run_dry_run_does_not_call_subprocess(capsys: pytest.CaptureFixture[str]
 
 
 @pytest.mark.unit
-def test_run_dry_run_prints_command(capsys: pytest.CaptureFixture[str]) -> None:
-    """run(dry_run=True) prints the full ffmpeg command to stdout."""
-    with patch("subprocess.run"):
+def test_run_dry_run_logs_command(caplog: pytest.LogCaptureFixture) -> None:
+    """run(dry_run=True) logs the full ffmpeg command."""
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="travel_video.ffmpeg.commands"), patch(
+        "subprocess.run"
+    ):
         run(["-i", "input.mp4", "output.mp4"], dry_run=True)
 
-    captured = capsys.readouterr()
-    assert "ffmpeg" in captured.out
-    assert "input.mp4" in captured.out
-    assert "output.mp4" in captured.out
+    assert "ffmpeg" in caplog.text
+    assert "input.mp4" in caplog.text
+    assert "output.mp4" in caplog.text
 
 
 @pytest.mark.unit
@@ -109,7 +113,7 @@ def test_probe_duration_parses_float() -> None:
     """probe_duration returns the duration as a float from ffprobe stdout."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
-    mock_result.stdout = "12.345\n"
+    mock_result.stdout = b"12.345\n"
 
     with patch("subprocess.run", return_value=mock_result):
         duration = probe_duration(Path("/some/video.mp4"))
@@ -122,7 +126,7 @@ def test_probe_duration_strips_whitespace() -> None:
     """probe_duration handles whitespace around the float value."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
-    mock_result.stdout = "  5.0  \n"
+    mock_result.stdout = b"  5.0  \n"
 
     with patch("subprocess.run", return_value=mock_result):
         duration = probe_duration(Path("/some/clip.mp4"))
@@ -135,7 +139,7 @@ def test_probe_duration_calls_ffprobe_with_correct_args() -> None:
     """probe_duration invokes ffprobe with the expected argument list."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
-    mock_result.stdout = "3.0"
+    mock_result.stdout = b"3.0"
 
     with patch("subprocess.run", return_value=mock_result) as mock_sub:
         probe_duration(Path("/videos/test.mp4"))
@@ -157,7 +161,7 @@ def test_probe_duration_raises_on_nonzero_exit() -> None:
     """probe_duration raises FFmpegError when ffprobe returns a non-zero exit code."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 1
-    mock_result.stdout = ""
+    mock_result.stdout = b""
     mock_result.stderr = b"No such file or directory"
 
     with patch("subprocess.run", return_value=mock_result), pytest.raises(FFmpegError):
@@ -174,10 +178,11 @@ def test_probe_duration_raises_on_non_float_output() -> None:
     """probe_duration raises FFmpegError when ffprobe stdout is not parseable as float."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
-    mock_result.stdout = "N/A"
+    mock_result.stdout = b"N/A"
 
-    with patch("subprocess.run", return_value=mock_result), pytest.raises(
-        FFmpegError, match="[Cc]ould not parse"
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        pytest.raises(FFmpegError, match="[Cc]ould not parse"),
     ):
         probe_duration(Path("/some/video.mp4"))
 
@@ -187,7 +192,7 @@ def test_probe_duration_raises_on_empty_output() -> None:
     """probe_duration raises FFmpegError when ffprobe stdout is empty."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
-    mock_result.stdout = ""
+    mock_result.stdout = b""
 
     with patch("subprocess.run", return_value=mock_result), pytest.raises(FFmpegError):
         probe_duration(Path("/some/video.mp4"))

@@ -7,10 +7,13 @@ constructed here — only the surrounding CLI skeleton.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 
 from travel_video.ffmpeg.filters import crossfade_audio, crossfade_video
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Custom exception
@@ -27,7 +30,7 @@ class FFmpegError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def run(args: list[str], *, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
+def run(args: list[str], *, dry_run: bool = False) -> subprocess.CompletedProcess[bytes]:
     """Run ``ffmpeg`` with *args*.
 
     Parameters
@@ -52,10 +55,10 @@ def run(args: list[str], *, dry_run: bool = False) -> subprocess.CompletedProces
     cmd = ["ffmpeg", *args]
 
     if dry_run:
-        print(" ".join(str(a) for a in cmd))
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
+        log.info("Dry run: %s", " ".join(str(a) for a in cmd))
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"", stderr=b"")
 
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True)  # noqa: S603
 
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace") if result.stderr else ""
@@ -90,36 +93,29 @@ def probe_duration(path: Path) -> float:
     """
     cmd = [
         "ffprobe",
-        "-v", "quiet",
-        "-show_entries", "format=duration",
-        "-of", "csv=p=0",
+        "-v",
+        "quiet",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "csv=p=0",
         str(path),
     ]
 
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True)  # noqa: S603
 
     if result.returncode != 0:
-        stderr_raw = result.stderr
-        stderr = (
-            stderr_raw.decode(errors="replace")
-            if isinstance(stderr_raw, bytes)
-            else (stderr_raw or "")
-        )
+        stderr = result.stderr.decode(errors="replace") if result.stderr else ""
         raise FFmpegError(
             f"ffprobe failed for {path!r} (exit {result.returncode}). stderr: {stderr}"
         )
 
-    stdout_raw = result.stdout
-    raw = (
-        stdout_raw.decode(errors="replace") if isinstance(stdout_raw, bytes) else (stdout_raw or "")
-    ).strip()
+    raw = result.stdout.decode(errors="replace").strip()
 
     try:
         return float(raw)
     except ValueError:
-        raise FFmpegError(
-            f"Could not parse ffprobe duration output as float: {raw!r}"
-        ) from None
+        raise FFmpegError(f"Could not parse ffprobe duration output as float: {raw!r}") from None
 
 
 # ---------------------------------------------------------------------------
@@ -172,13 +168,20 @@ def normalize_clip(
     """
     args: list[str] = [
         "-y",
-        "-i", str(input_path),
-        "-filter_complex", video_filter,
-        "-map", "[v]",
-        "-af", audio_filter,
-        "-c:v", encoder,
-        "-b:v", bitrate,
-        "-c:a", "aac",
+        "-i",
+        str(input_path),
+        "-filter_complex",
+        video_filter,
+        "-map",
+        "[v]",
+        "-af",
+        audio_filter,
+        "-c:v",
+        encoder,
+        "-b:v",
+        bitrate,
+        "-c:a",
+        "aac",
         str(output_path),
     ]
     run(args, dry_run=dry_run)
@@ -242,9 +245,12 @@ def concat_with_xfade(
         args: list[str] = [
             "-y",
             *input_flags,
-            "-c:v", encoder,
-            "-b:v", bitrate,
-            "-c:a", "aac",
+            "-c:v",
+            encoder,
+            "-b:v",
+            bitrate,
+            "-c:a",
+            "aac",
             str(output),
         ]
         run(args, dry_run=dry_run)
@@ -298,12 +304,18 @@ def concat_with_xfade(
     args = [
         "-y",
         *input_flags,
-        "-filter_complex", filter_complex,
-        "-map", f"[{current_v}]",
-        "-map", f"[{current_a}]",
-        "-c:v", encoder,
-        "-b:v", bitrate,
-        "-c:a", "aac",
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        f"[{current_v}]",
+        "-map",
+        f"[{current_a}]",
+        "-c:v",
+        encoder,
+        "-b:v",
+        bitrate,
+        "-c:a",
+        "aac",
         str(output),
     ]
     run(args, dry_run=dry_run)
