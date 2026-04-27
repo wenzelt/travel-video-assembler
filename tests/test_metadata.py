@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from travel_video.metadata import extract
 from travel_video.models import Clip
 
 # ---------------------------------------------------------------------------
@@ -57,8 +58,6 @@ def test_extract_full_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     mock_run.assert_called_once()
@@ -95,8 +94,6 @@ def test_extract_missing_gps_returns_none(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.gps_lat is None
@@ -118,7 +115,8 @@ def test_extract_missing_date_falls_back_to_mtime(
     video.touch()
 
     known_mtime = 1_700_000_000.0  # 2023-11-14 22:13:20 UTC
-    expected_dt = datetime.fromtimestamp(known_mtime)
+
+    expected_dt = datetime.fromtimestamp(known_mtime, tz=UTC)
 
     mock_proc = _make_completed_process("exif_no_date.json")
 
@@ -129,8 +127,6 @@ def test_extract_missing_date_falls_back_to_mtime(
         patch("travel_video.cache.metadata_cache_set"),
         patch.object(Path, "stat", return_value=_fake_stat(known_mtime)),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.creation_time == expected_dt
@@ -158,8 +154,6 @@ def test_extract_gps_directional_north_east(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.gps_lat == pytest.approx(48.8584)
@@ -188,8 +182,6 @@ def test_extract_gps_south_is_negative(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.gps_lat == pytest.approx(-33.8688)
@@ -218,8 +210,6 @@ def test_extract_duration_string(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.duration_s == pytest.approx(83.0)
@@ -242,7 +232,7 @@ def test_extract_cache_hit_skips_subprocess(
     cached_data = {
         "path": str(video),
         "duration_s": 42.0,
-        "creation_time": "2024:05:20 10:00:00",
+        "creation_time": "2024-05-20T10:00:00",
         "gps_lat": 40.7128,
         "gps_lon": -74.0060,
         "rotation": 0,
@@ -256,8 +246,6 @@ def test_extract_cache_hit_skips_subprocess(
         patch("travel_video.cache.metadata_cache_get", return_value=cached_data),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     mock_run.assert_not_called()
@@ -289,8 +277,6 @@ def test_extract_composite_rotation_fallback(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.rotation == 270
@@ -319,11 +305,9 @@ def test_extract_exiftool_nonzero_raises_runtime_error(
         patch("subprocess.run", return_value=mock_proc),
         patch("travel_video.cache.cache_key", return_value="test-key-err"),
         patch("travel_video.cache.metadata_cache_get", return_value=None),
+        pytest.raises(RuntimeError, match="exiftool"),
     ):
-        from travel_video.metadata import extract
-
-        with pytest.raises(RuntimeError, match="exiftool"):
-            extract(video)
+        extract(video)
 
 
 # ---------------------------------------------------------------------------
@@ -357,14 +341,12 @@ def test_extract_rotation_defaults_to_zero_when_both_missing(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.rotation == 0
 
 
-def test_extract_mediaCreateDate_fallback(
+def test_extract_media_create_date_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """MediaCreateDate is used when CreateDate is absent."""
@@ -391,8 +373,6 @@ def test_extract_mediaCreateDate_fallback(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.creation_time == datetime(2024, 2, 14, 8, 0, 0)
@@ -425,8 +405,6 @@ def test_extract_duration_value_field(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     assert clip.duration_s == pytest.approx(99.5)
@@ -459,8 +437,6 @@ def test_extract_duration_with_fractional_seconds_string(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     # 1h * 3600 + 23m * 60 + 45.67s = 5025.67
@@ -496,8 +472,6 @@ def test_extract_gps_dms_string(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set"),
     ):
-        from travel_video.metadata import extract
-
         clip = extract(video)
 
     # 48 + 51/60 + 30.24/3600 = 48.858400
@@ -522,14 +496,53 @@ def test_extract_calls_cache_set_on_miss(
         patch("travel_video.cache.metadata_cache_get", return_value=None),
         patch("travel_video.cache.metadata_cache_set") as mock_set,
     ):
-        from travel_video.metadata import extract
-
         extract(video)
 
     mock_set.assert_called_once()
     key_arg, data_arg = mock_set.call_args[0]
     assert key_arg == "test-key-setcheck"
     # Verify the stored data is JSON-serialisable
-    import json as _json
-    serialised = _json.dumps(data_arg)
+    serialised = json.dumps(data_arg)
     assert serialised  # non-empty
+
+
+# ---------------------------------------------------------------------------
+# Fix 6: DMS South/West test
+# ---------------------------------------------------------------------------
+
+
+def test_extract_gps_dms_south_west(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GPS DMS string with S suffix parses to a negative float."""
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:06:01 09:00:00",
+        "GPSLatitude": "33 deg 52' 0.00\" S",
+        "GPSLongitude": "151 deg 12' 33.48\" W",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+        "Rotation": 0,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    with (
+        patch("subprocess.run", return_value=mock_proc),
+        patch("travel_video.cache.cache_key", return_value="test-key-dms-sw"),
+        patch("travel_video.cache.metadata_cache_get", return_value=None),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        clip = extract(video)
+
+    assert clip.gps_lat is not None
+    assert clip.gps_lat < 0, "S hemisphere must produce negative latitude"
+    assert clip.gps_lon is not None
+    assert clip.gps_lon < 0, "W hemisphere must produce negative longitude"

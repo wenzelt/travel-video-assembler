@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from travel_video import cache
@@ -109,8 +109,8 @@ def _parse(path: Path, tags: dict) -> Clip:
         path=path,
         duration_s=_parse_duration(tags),
         creation_time=_parse_creation_time(path, tags),
-        gps_lat=_parse_gps(tags.get("GPSLatitude"), is_lat=True),
-        gps_lon=_parse_gps(tags.get("GPSLongitude"), is_lat=False),
+        gps_lat=_parse_gps(tags.get("GPSLatitude")),
+        gps_lon=_parse_gps(tags.get("GPSLongitude")),
         rotation=_parse_rotation(tags),
         width=int(tags.get("ImageWidth", 0)),
         height=int(tags.get("ImageHeight", 0)),
@@ -126,10 +126,11 @@ def _parse_creation_time(path: Path, tags: dict) -> datetime:
         raw = tags.get(field)
         if raw:
             try:
+                # EXIF CreateDate is camera-local time; stored as naive datetime intentionally
                 return datetime.strptime(raw, _DATE_FMT)
             except (ValueError, TypeError):
                 continue
-    return datetime.fromtimestamp(path.stat().st_mtime)
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
 
 # --------------- duration -------------------------------------------------
@@ -142,7 +143,9 @@ def _parse_duration(tags: dict) -> float:
     - A numeric value (int or float)
     - A time string like ``"0:01:23"`` or ``"1:23:45.67"``
     """
-    raw = tags.get("Duration") or tags.get("DurationValue")
+    raw = tags.get("Duration")
+    if raw is None:
+        raw = tags.get("DurationValue")
     if raw is None:
         return 0.0
     if isinstance(raw, (int, float)):
@@ -168,7 +171,7 @@ def _parse_duration_string(s: str) -> float:
 # --------------- GPS ------------------------------------------------------
 
 
-def _parse_gps(raw: float | str | None, *, is_lat: bool) -> float | None:  # noqa: ARG001
+def _parse_gps(raw: float | str | None) -> float | None:
     """Parse a GPS value that may be a float or a directional string.
 
     Returns ``None`` when the value is absent or unparseable.
@@ -229,7 +232,7 @@ def _clip_to_dict(clip: Clip) -> dict:
     return {
         "path": str(clip.path),
         "duration_s": clip.duration_s,
-        "creation_time": clip.creation_time.strftime(_DATE_FMT),
+        "creation_time": clip.creation_time.isoformat(),
         "gps_lat": clip.gps_lat,
         "gps_lon": clip.gps_lon,
         "rotation": clip.rotation,
@@ -243,7 +246,7 @@ def _clip_from_dict(path: Path, data: dict) -> Clip:
     return Clip(
         path=path,
         duration_s=float(data["duration_s"]),
-        creation_time=datetime.strptime(data["creation_time"], _DATE_FMT),
+        creation_time=datetime.fromisoformat(data["creation_time"]),
         gps_lat=data["gps_lat"],
         gps_lon=data["gps_lon"],
         rotation=int(data["rotation"]),
