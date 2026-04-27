@@ -169,9 +169,7 @@ def test_plan_renders_table_with_clips(tmp_path: Path) -> None:
         patch("travel_video.cli.Config.load") as mock_cfg,
     ):
         mock_cfg.return_value = MagicMock()
-        result = runner.invoke(
-            app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)]
-        )
+        result = runner.invoke(app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)])
 
     assert result.exit_code == 0, result.output
     mock_scan.assert_called_once_with(input_dir)
@@ -204,9 +202,7 @@ def test_plan_renders_day_separator_row(tmp_path: Path) -> None:
         patch("travel_video.cli.Config.load") as mock_cfg,
     ):
         mock_cfg.return_value = MagicMock()
-        result = runner.invoke(
-            app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)]
-        )
+        result = runner.invoke(app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)])
 
     assert result.exit_code == 0, result.output
     assert "day break" in result.output
@@ -230,13 +226,12 @@ def test_plan_shows_summary_line(tmp_path: Path) -> None:
         patch("travel_video.cli.Config.load") as mock_cfg,
     ):
         mock_cfg.return_value = MagicMock()
-        result = runner.invoke(
-            app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)]
-        )
+        result = runner.invoke(app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)])
 
     assert result.exit_code == 0, result.output
-    # Summary should mention clip count and duration
-    assert "1" in result.output  # at least the clip count
+    assert "Total clips" in result.output
+    assert "Total days" in result.output
+    assert "Total duration" in result.output
 
 
 @pytest.mark.unit
@@ -258,9 +253,7 @@ def test_plan_formats_duration_as_mm_ss(tmp_path: Path) -> None:
         patch("travel_video.cli.Config.load") as mock_cfg,
     ):
         mock_cfg.return_value = MagicMock()
-        result = runner.invoke(
-            app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)]
-        )
+        result = runner.invoke(app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)])
 
     assert result.exit_code == 0, result.output
     assert "01:30" in result.output
@@ -284,9 +277,7 @@ def test_plan_shows_gps_dash_when_absent(tmp_path: Path) -> None:
         patch("travel_video.cli.Config.load") as mock_cfg,
     ):
         mock_cfg.return_value = MagicMock()
-        result = runner.invoke(
-            app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)]
-        )
+        result = runner.invoke(app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)])
 
     assert result.exit_code == 0, result.output
     assert "—" in result.output  # — (em dash)
@@ -306,9 +297,7 @@ def test_plan_empty_directory_shows_zero_clips(tmp_path: Path) -> None:
         patch("travel_video.cli.Config.load") as mock_cfg,
     ):
         mock_cfg.return_value = MagicMock()
-        result = runner.invoke(
-            app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)]
-        )
+        result = runner.invoke(app, ["plan", "--input", str(input_dir), "--config", str(cfg_file)])
 
     assert result.exit_code == 0, result.output
     assert "0" in result.output

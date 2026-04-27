@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import date as _Date
 from pathlib import Path
 from typing import Annotated
 
@@ -90,8 +91,9 @@ def plan(
         console=console,
         transient=True,
     ) as progress:
+        task_id = progress.add_task("Reading metadata…", total=None)
         for path in paths:
-            progress.add_task(f"Reading {path.name}…", total=None)
+            progress.update(task_id, description=f"Reading {path.name}…")
             clips.append(metadata.extract(path))
 
     # --- Build timeline ------------------------------------------------------
@@ -109,7 +111,7 @@ def plan(
 
     clip_number = 0
     total_duration = 0.0
-    day_set: set = set()
+    day_set: set[_Date] = set()
 
     for item in timeline:
         if isinstance(item, DaySeparator):
@@ -189,11 +191,21 @@ def inspect(
     console.print(Panel(kv_table, title=f"[bold]{file.name}[/bold]", expand=False))
 
     # --- Raw ExifTool output -------------------------------------------------
-    result = subprocess.run(  # noqa: S603
-        ["exiftool", "-j", str(file)],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(  # noqa: S603 — args are a literal list; file path is already validated
+            ["exiftool", "-j", str(file)],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        console.print(
+            Panel(
+                "[red]exiftool not found — install it via: brew install exiftool[/red]",
+                title="Raw ExifTool output",
+                expand=False,
+            )
+        )
+        return
     if result.returncode == 0:
         console.print(Panel(result.stdout.strip(), title="Raw ExifTool output", expand=False))
     else:
