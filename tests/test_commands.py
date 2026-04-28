@@ -264,6 +264,70 @@ def test_normalize_clip_dry_run_does_not_call_subprocess() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 7b. normalize_clip — extra_input_paths prepended as additional -i args
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalize_clip_extra_inputs_added_as_i_args() -> None:
+    """normalize_clip with extra_input_paths prepends them as -i args before -filter_complex."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    input_path = Path("/input/clip.mp4")
+    output_path = Path("/output/norm.mp4")
+    extra_png = Path("/cache/map.png")
+    video_filter = "[0:v]scale=1080:1920[v]"
+    audio_filter = "highpass=f=120"
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=input_path,
+            output_path=output_path,
+            video_filter=video_filter,
+            audio_filter=audio_filter,
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+            extra_input_paths=[extra_png],
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    # The extra PNG must appear as a -i argument
+    assert "-i" in called_args
+    assert str(extra_png) in called_args
+    # It must appear before -filter_complex
+    idx_extra_i = called_args.index(str(extra_png))
+    idx_filter = called_args.index("-filter_complex")
+    assert idx_extra_i < idx_filter
+
+
+@pytest.mark.unit
+def test_normalize_clip_no_extra_inputs_behaves_as_before() -> None:
+    """normalize_clip with extra_input_paths=None behaves identically to the original."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    input_path = Path("/input/clip.mp4")
+    output_path = Path("/output/norm.mp4")
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=input_path,
+            output_path=output_path,
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    # Only the main input should appear (one -i + input_path pair after -y)
+    i_indices = [idx for idx, a in enumerate(called_args) if a == "-i"]
+    assert len(i_indices) == 1
+    assert called_args[i_indices[0] + 1] == str(input_path)
+
+
+# ---------------------------------------------------------------------------
 # 8. concat_with_xfade — 1 input — no xfade filter
 # ---------------------------------------------------------------------------
 

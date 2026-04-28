@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -21,14 +21,21 @@ from travel_video.renderer import render
 # ---------------------------------------------------------------------------
 
 
-def _make_clip(path: Path, width: int = 1080, height: int = 1920, rotation: int = 0) -> Clip:
+def _make_clip(
+    path: Path,
+    width: int = 1080,
+    height: int = 1920,
+    rotation: int = 0,
+    gps_lat: float | None = None,
+    gps_lon: float | None = None,
+) -> Clip:
     """Create a minimal Clip with the given path and dimensions."""
     return Clip(
         path=path,
         duration_s=5.0,
         creation_time=datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC),
-        gps_lat=None,
-        gps_lon=None,
+        gps_lat=gps_lat,
+        gps_lon=gps_lon,
         rotation=rotation,
         width=width,
         height=height,
@@ -197,19 +204,33 @@ def test_cache_hit_skips_normalization(
     cache_dir: Path,
 ) -> None:
     """normalize_clip is NOT called when the normalized file already exists."""
+    import hashlib
+
     from travel_video.cache import cache_key, normalized_path
 
     clip_file = tmp_path / "clip.mp4"
     clip_file.touch()
 
-    # Pre-populate the cache with a fake normalized file
-    key = cache_key(clip_file)
-    expected_norm = normalized_path(key)
+    config = _default_config()
+
+    # Reproduce the overlay_sig the renderer computes for the default config.
+    overlay_sig = hashlib.sha1(
+        (
+            f"{config.overlays.location_label.enabled}"
+            f":{config.overlays.mini_map.enabled}"
+            f":{config.overlays.mini_map.probability}"
+        ).encode(),
+        usedforsecurity=False,
+    ).hexdigest()[:8]
+
+    # Pre-populate the cache with a fake normalized file using the full key.
+    base_key = cache_key(clip_file)
+    full_key = f"{base_key}_{overlay_sig}"
+    expected_norm = normalized_path(full_key)
     expected_norm.touch()
 
     clip = _make_clip(clip_file)
     output = tmp_path / "out.mkv"
-    config = _default_config()
 
     with (
         patch("travel_video.renderer.commands.normalize_clip") as mock_norm,
@@ -360,3 +381,129 @@ def test_empty_timeline(
     mock_norm.assert_not_called()
     concat_segments = mock_concat.call_args[0][0]
     assert concat_segments == []
+
+
+# ---------------------------------------------------------------------------
+# 9. location_label overlay applied when enabled
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_location_label_applied_when_enabled(
+    tmp_path: Path,
+    cache_dir: Path,
+) -> None:
+    """When location_label is enabled, normalize_clip receives the drawtext fragment."""
+    clip_file = tmp_path / "clip.mp4"
+    clip_file.touch()
+    clip = _make_clip(clip_file, gps_lat=48.8566, gps_lon=2.3522)
+
+    config = _default_config()
+
+    drawtext_fragment = "drawtext=text='Paris, France, FR':x=w-tw-48:y=h-th-48"
+
+    with (
+        patch("travel_video.renderer.commands.normalize_clip") as mock_norm,
+        patch("travel_video.renderer.commands.concat_with_xfade"),
+        patch("travel_video.renderer.commands.run"),
+        patch(
+            "travel_video.renderer.location_label.build",
+            return_value=drawtext_fragment,
+        ) as mock_label,
+    ):
+        render([clip], config, output_path=tmp_path / "out.mkv")
+
+    mock_label.assert_called_once_with(clip)
+    assert mock_norm.call_count == 1
+    # video_filter arg (positional index 2) must contain the drawtext fragment
+    video_filter_used = mock_norm.call_args[0][2]
+    assert drawtext_fragment in video_filter_used
+
+
+# ---------------------------------------------------------------------------
+# 10. location_label NOT called when overlay is disabled
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_location_label_skipped_when_disabled(
+    tmp_path: Path,
+    cache_dir: Path,
+) -> None:
+    """When location_label is disabled, location_label.build is never called."""
+    from travel_video.config import OverlayItemConfig, OverlaysConfig
+
+    clip_file = tmp_path / "clip.mp4"
+    clip_file.touch()
+    clip = _make_clip(clip_file, gps_lat=48.8566, gps_lon=2.3522)
+
+    config = _default_config()
+    config = config.model_copy(
+        update={
+            "overlays": OverlaysConfig(
+                location_label=OverlayItemConfig(enabled=False),
+                mini_map=OverlayItemConfig(enabled=False),
+            )
+        }
+    )
+
+    with (
+        patch("travel_video.renderer.commands.normalize_clip"),
+        patch("travel_video.renderer.commands.concat_with_xfade"),
+        patch("travel_video.renderer.commands.run"),
+        patch("travel_video.renderer.location_label.build") as mock_label,
+    ):
+        render([clip], config, output_path=tmp_path / "out.mkv")
+
+    mock_label.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 11. mini_map applied when location_label returns None
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_mini_map_applied_when_label_none(
+    tmp_path: Path,
+    cache_dir: Path,
+) -> None:
+    """When location_label returns None, mini_map.build result is passed to normalize_clip."""
+    from travel_video.config import OverlayItemConfig, OverlaysConfig
+
+    clip_file = tmp_path / "clip.mp4"
+    clip_file.touch()
+    clip = _make_clip(clip_file, gps_lat=48.8566, gps_lon=2.3522)
+
+    config = _default_config()
+    config = config.model_copy(
+        update={
+            "overlays": OverlaysConfig(
+                location_label=OverlayItemConfig(enabled=True),
+                mini_map=OverlayItemConfig(enabled=True),
+            )
+        }
+    )
+
+    map_png = tmp_path / "map.png"
+    map_png.touch()
+    overlay_fragment = "overlay=W-w-48:48"
+
+    with (
+        patch("travel_video.renderer.commands.normalize_clip") as mock_norm,
+        patch("travel_video.renderer.commands.concat_with_xfade"),
+        patch("travel_video.renderer.commands.run"),
+        patch("travel_video.renderer.location_label.build", return_value=None),
+        patch(
+            "travel_video.renderer.mini_map.build",
+            return_value=(map_png, overlay_fragment),
+        ) as mock_map,
+    ):
+        render([clip], config, output_path=tmp_path / "out.mkv")
+
+    mock_map.assert_called_once_with(clip, config)
+    assert mock_norm.call_count == 1
+    # extra_input_paths kwarg (passed to commands.normalize_clip) must contain the map png
+    norm_kwargs = mock_norm.call_args[1]
+    extra_input_paths = norm_kwargs.get("extra_input_paths") or []
+    assert map_png in extra_input_paths

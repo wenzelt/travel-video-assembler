@@ -10,6 +10,7 @@ Algorithm
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from travel_video.config import Config
 from travel_video.ffmpeg import commands
 from travel_video.ffmpeg.filters import audio_chain, black_screen, vertical_normalize
 from travel_video.models import Clip, DaySeparator, TimelineItem
+from travel_video.overlays import location_label, mini_map
 
 log = logging.getLogger(__name__)
 
@@ -58,9 +60,43 @@ def render(
         config.audio.loudnorm,
     )
 
+    overlay_sig = hashlib.sha1(
+        (
+            f"{config.overlays.location_label.enabled}"
+            f":{config.overlays.mini_map.enabled}"
+            f":{config.overlays.mini_map.probability}"
+        ).encode(),
+        usedforsecurity=False,
+    ).hexdigest()[:8]
+
     for item in timeline:
         if isinstance(item, Clip):
-            segments.append(_normalize_clip(item, config, af, dry_run=dry_run))
+            label_filter: str | None = None
+            if config.overlays.location_label.enabled:
+                label_filter = location_label.build(item)
+
+            map_result: tuple[Path, str] | None = None
+            if label_filter is None and config.overlays.mini_map.enabled:
+                map_result = mini_map.build(item, config)
+
+            extra_inputs = [map_result[0]] if map_result else None
+            overlay_filters: list[str] | None = (
+                [label_filter]
+                if label_filter
+                else ([map_result[1]] if map_result else None)
+            )
+
+            segments.append(
+                _normalize_clip(
+                    item,
+                    config,
+                    af,
+                    overlay_sig=overlay_sig,
+                    extra_inputs=extra_inputs,
+                    overlay_filters=overlay_filters,
+                    dry_run=dry_run,
+                )
+            )
         elif isinstance(item, DaySeparator):
             segments.append(_generate_separator(sep_cache_key, config, dry_run=dry_run))
 
@@ -84,10 +120,35 @@ def _normalize_clip(
     config: Config,
     af: str,
     *,
+    overlay_sig: str = "",
+    extra_inputs: list[Path] | None = None,
+    overlay_filters: list[str] | None = None,
     dry_run: bool,
 ) -> Path:
-    """Return the normalized path for *clip*, encoding it if not already cached."""
-    key = cache_key(clip.path)
+    """Return the normalized path for *clip*, encoding it if not already cached.
+
+    Parameters
+    ----------
+    clip:
+        Source clip to normalise.
+    config:
+        Project configuration.
+    af:
+        Audio filter chain string.
+    overlay_sig:
+        Short hash of overlay config, appended to the cache key so changes
+        in overlay settings bust the cache.
+    extra_inputs:
+        Additional ``-i`` input paths forwarded to ``normalize_clip``
+        (e.g. a mini-map PNG).
+    overlay_filters:
+        Filter-graph fragments to append after the ``vertical_normalize``
+        fragment (comma-separated in the final string).
+    dry_run:
+        When ``True``, print FFmpeg commands without executing them.
+    """
+    base_key = cache_key(clip.path)
+    key = f"{base_key}_{overlay_sig}" if overlay_sig else base_key
     norm = normalized_path(key)
 
     if norm.exists():
@@ -95,6 +156,9 @@ def _normalize_clip(
         return norm
 
     vf = vertical_normalize(clip.width, clip.height, clip.rotation)
+    if overlay_filters:
+        vf = vf + "," + ",".join(overlay_filters)
+
     commands.normalize_clip(
         clip.path,
         norm,
@@ -102,6 +166,7 @@ def _normalize_clip(
         af,
         config.video.encoder,
         config.video.bitrate,
+        extra_input_paths=extra_inputs,
         dry_run=dry_run,
     )
     return norm

@@ -131,13 +131,14 @@ def normalize_clip(
     encoder: str,
     bitrate: str,
     *,
+    extra_input_paths: list[Path] | None = None,
     dry_run: bool = False,
 ) -> None:
     """Normalise a single clip to 1080×1920 with the given filter settings.
 
     Builds and runs::
 
-        ffmpeg -y -i <input_path>
+        ffmpeg -y -i <input_path> [-i <extra_input> ...]
           -filter_complex "<video_filter>" -map "[v]"
           -af "<audio_filter>"
           -c:v <encoder> -b:v <bitrate>
@@ -158,6 +159,9 @@ def normalize_clip(
         Video encoder name (e.g. ``"h264_videotoolbox"``).
     bitrate:
         Target video bitrate (e.g. ``"12M"``).
+    extra_input_paths:
+        Optional additional ``-i`` arguments (e.g. map PNG paths) prepended
+        before ``-filter_complex``.
     dry_run:
         When ``True``, print the command and skip execution.
 
@@ -166,10 +170,15 @@ def normalize_clip(
     FFmpegError
         If FFmpeg exits with a non-zero return code.
     """
+    extra_i_args: list[str] = []
+    for extra in extra_input_paths or []:
+        extra_i_args.extend(["-i", str(extra)])
+
     args: list[str] = [
         "-y",
         "-i",
         str(input_path),
+        *extra_i_args,
         "-filter_complex",
         video_filter,
         "-map",
