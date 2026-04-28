@@ -23,7 +23,7 @@ packages = ["src/travel_video"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=travel_video --cov-report=term-missing"
+addopts = "--cov=travel_video --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "unit: pure unit tests with no I/O",
     "integration: tests that touch the filesystem or external processes",

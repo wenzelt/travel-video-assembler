@@ -13,6 +13,7 @@ from rich.table import Table
 
 from travel_video import metadata, planner, renderer, scanner
 from travel_video.config import Config
+from travel_video.deps import check_dependencies
 from travel_video.logging_setup import setup_logging
 from travel_video.models import Clip, DaySeparator
 
@@ -51,6 +52,7 @@ def render(
 ) -> None:
     """Render all clips in INPUT into a single travel video at OUTPUT."""
     setup_logging(verbose)
+    check_dependencies()
 
     # --- Validate --input ---------------------------------------------------
     if not input.exists() or not input.is_dir():

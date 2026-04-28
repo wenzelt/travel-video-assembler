@@ -56,7 +56,7 @@ class Config(BaseModel):
     overlays: OverlaysConfig = Field(default_factory=OverlaysConfig)
 
     @classmethod
-    def load(cls, path: Path) -> "Config":
+    def load(cls, path: Path) -> Config:
         with open(path) as f:
             data = yaml.safe_load(f) or {}
         return cls.model_validate(data)
