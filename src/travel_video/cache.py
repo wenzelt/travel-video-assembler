@@ -65,8 +65,28 @@ def cache_key(path: Path) -> str:
     return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()
 
 
+def _validate_key(key: str) -> None:
+    """Ensure key is a safe string for use as a filename.
+    
+    Prevents path traversal by forbidding slashes, backslashes, and '..'.
+    Allows alphanumeric characters, underscores, dots, and hyphens.
+    """
+    if not isinstance(key, str):
+        raise ValueError(f"Cache key must be a string, got {type(key).__name__}")
+    
+    if not key or key in (".", "..") or "/" in key or "\\" in key or ".." in key:
+        raise ValueError(f"Invalid or unsafe cache key: {key!r}")
+    
+    # Allow alphanumeric, underscore, dot, hyphen
+    if not all(c.isalnum() or c in "_.-" for c in key):
+        raise ValueError(f"Invalid characters in cache key: {key!r}")
+
+
 def metadata_cache_get(key: str) -> dict | None:
     """Return the cached metadata dict for *key*, or ``None`` if not present.
+
+    Treats corrupted or unreadable cache files as a cache miss rather than
+    raising an exception.
 
     Args:
         key: Cache key as returned by :func:`cache_key`.
@@ -74,12 +94,20 @@ def metadata_cache_get(key: str) -> dict | None:
     Returns:
         The previously stored dict, or ``None`` when there is no entry.
     """
+    try:
+        _validate_key(key)
+    except ValueError:
+        return None
+
     # Intentionally does not call _ensure() — a read must not create the directory.
-    meta_dir = _cache_root() / "metadata"
-    cache_file = meta_dir / f"{key}.json"
+    cache_file = _cache_root() / "metadata" / f"{key}.json"
     if not cache_file.exists():
         return None
-    return json.loads(cache_file.read_text(encoding="utf-8"))
+    try:
+        with open(cache_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
 
 
 def metadata_cache_set(key: str, data: dict) -> None:
@@ -91,9 +119,19 @@ def metadata_cache_set(key: str, data: dict) -> None:
         key:  Cache key as returned by :func:`cache_key`.
         data: Arbitrary JSON-serialisable dict to store.
     """
+    _validate_key(key)
     meta_dir = _ensure("metadata")
     cache_file = meta_dir / f"{key}.json"
-    cache_file.write_text(json.dumps(data), encoding="utf-8")
+    
+    tmp = cache_file.with_suffix(".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, cache_file)
+    except OSError:
+        if tmp.exists():
+            tmp.unlink()
+        raise
 
 
 def normalized_path(key: str) -> Path:
@@ -107,6 +145,7 @@ def normalized_path(key: str) -> Path:
     Returns:
         A :class:`~pathlib.Path` of the form ``<cache_root>/normalized/<key>.mkv``.
     """
+    _validate_key(key)
     norm_dir = _ensure("normalized")
     return norm_dir / f"{key}.mkv"
 
@@ -122,5 +161,6 @@ def map_path(key: str) -> Path:
     Returns:
         A :class:`~pathlib.Path` of the form ``<cache_root>/maps/<key>.png``.
     """
+    _validate_key(key)
     maps_dir = _ensure("maps")
     return maps_dir / f"{key}.png"

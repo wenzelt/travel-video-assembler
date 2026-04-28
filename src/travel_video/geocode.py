@@ -58,21 +58,31 @@ def _geocode_cache_path() -> Path:
     return meta_dir / "geocode.json"
 
 
+import fcntl
+
+
 def _load_cache() -> dict[str, dict]:
     """Load the geocode cache from disk, returning an empty dict on any error."""
     path = _geocode_cache_path()
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        with open(path, "r", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {}
 
 
-def _save_cache(data: dict[str, dict]) -> None:
-    """Write *data* to the geocode cache file."""
-    path = _geocode_cache_path()
-    path.write_text(json.dumps(data), encoding="utf-8")
+def _save_cache(data: dict[str, dict[str, str]]) -> None:
+    """Write *data* to the geocode cache file atomically."""
+    cache_file = _geocode_cache_path()
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    tmp = cache_file.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, cache_file)
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +122,9 @@ def reverse(
     cache_key = f"{round(lat, 4)},{round(lon, 4)}"
 
     # --- Cache lookup ---
-    cache = _load_cache()
-    if cache_key in cache:
-        entry = cache[cache_key]
+    cache_data = _load_cache()
+    if cache_key in cache_data:
+        entry = cache_data[cache_key]
         return Location(town=entry["town"], country=entry["country"], iso=entry["iso"])
 
     # --- Live geocode ---
@@ -142,8 +152,18 @@ def reverse(
     except Exception:  # noqa: BLE001
         return None
 
-    # --- Persist to cache ---
-    cache[cache_key] = {"town": town, "country": country, "iso": iso}
-    _save_cache(cache)
+    # --- Persist to cache (with locking to avoid TOCTOU) ---
+    lock_path = _geocode_cache_path().with_suffix(".lock")
+    try:
+        with open(lock_path, "w") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            # Re-load cache inside lock to merge our change with any concurrent updates
+            current_cache = _load_cache()
+            current_cache[cache_key] = {"town": town, "country": country, "iso": iso}
+            _save_cache(current_cache)
+    except OSError:
+        # Fallback if locking fails for some reason
+        cache_data[cache_key] = {"town": town, "country": country, "iso": iso}
+        _save_cache(cache_data)
 
     return Location(town=town, country=country, iso=iso)

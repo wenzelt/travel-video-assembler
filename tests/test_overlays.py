@@ -200,16 +200,20 @@ def test_mini_map_build_returns_path_and_filter_when_successful(tmp_path: Path) 
     clip = _make_clip()
     config = Config()
 
-    def fake_urlretrieve(url: str, filename: str) -> tuple[str, object]:
-        # Create the file so it looks like a successful download
-        Path(filename).touch()
-        return (filename, {})
+    def fake_urlopen(req, timeout=None):
+        from unittest.mock import MagicMock
+        resp = MagicMock()
+        resp.__enter__.return_value = resp
+        resp.read.return_value = b"fake png data"
+        resp.headers = {"Content-Type": "image/png"}
+        return resp
 
-    _patch_urlretrieve = "travel_video.overlays.mini_map.urllib.request.urlretrieve"
+    _patch_urlopen = "travel_video.overlays.mini_map.urllib.request.urlopen"
     with (
         patch("travel_video.overlays.mini_map.should_show") as mock_show,
         patch("travel_video.overlays.mini_map.cache") as mock_cache,
-        patch(_patch_urlretrieve, side_effect=fake_urlretrieve),
+        patch(_patch_urlopen, side_effect=fake_urlopen),
+        patch("travel_video.overlays.mini_map.urllib.request.Request") as mock_req,
     ):
         mock_show.return_value = True
         fake_png = tmp_path / "map.png"
@@ -226,15 +230,15 @@ def test_mini_map_build_returns_path_and_filter_when_successful(tmp_path: Path) 
 
 @pytest.mark.unit
 def test_mini_map_build_returns_none_when_fetch_raises(tmp_path: Path) -> None:
-    """build() returns None when urlretrieve raises any exception."""
+    """build() returns None when urlopen raises any exception."""
     clip = _make_clip()
     config = Config()
 
-    _patch_urlretrieve = "travel_video.overlays.mini_map.urllib.request.urlretrieve"
+    _patch_urlopen = "travel_video.overlays.mini_map.urllib.request.urlopen"
     with (
         patch("travel_video.overlays.mini_map.should_show") as mock_show,
         patch("travel_video.overlays.mini_map.cache") as mock_cache,
-        patch(_patch_urlretrieve, side_effect=OSError("network error")),
+        patch(_patch_urlopen, side_effect=OSError("network error")),
     ):
         mock_show.return_value = True
         fake_png = tmp_path / "map.png"

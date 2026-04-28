@@ -91,16 +91,44 @@ def _run_exiftool(path: Path) -> dict:
     """Invoke exiftool and return the first record as a dict.
 
     Raises:
-        RuntimeError: On non-zero exit code.
+        RuntimeError: On non-zero exit code or unparseable output.
     """
     cmd = ["exiftool", "-j", *_EXIFTOOL_FIELDS, str(path)]
-    result = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+    except OSError as exc:
+        raise RuntimeError(f"Failed to execute exiftool: {exc}") from exc
+
     if result.returncode != 0:
+        stderr = result.stderr.strip() if result.stderr else "no stderr"
         raise RuntimeError(
-            f"exiftool failed (exit {result.returncode}) for {path}: {result.stderr}"
+            f"exiftool failed (exit {result.returncode}) for {path}: {stderr}"
         )
-    records = json.loads(result.stdout)
-    return records[0] if records else {}
+
+    stdout = result.stdout.strip()
+    if not stdout:
+        raise RuntimeError(f"exiftool produced no output for {path}")
+
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        # Include a snippet of the bad output for debugging
+        snippet = stdout[:100] + "..." if len(stdout) > 100 else stdout
+        raise RuntimeError(
+            f"exiftool produced invalid JSON for {path}: {exc}\nOutput snippet: {snippet!r}"
+        ) from exc
+
+    if not isinstance(parsed, list):
+        raise RuntimeError(
+            f"exiftool output was not a list for {path!r}: {type(parsed).__name__}"
+        )
+
+    if not parsed:
+        # ExifTool -j returns [] if no tags matched, but we expect at least one record
+        # for an existing file.
+        raise RuntimeError(f"exiftool returned no records for {path}")
+
+    return parsed[0]
 
 
 def _parse(path: Path, tags: dict) -> Clip:

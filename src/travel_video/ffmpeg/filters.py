@@ -71,23 +71,26 @@ def vertical_normalize(
     already_vertical = eff_h >= eff_w
 
     if already_vertical:
-        core = f"scale={_TARGET_W}:{_TARGET_H}[v]"
+        core = f"scale={_TARGET_W}:{_TARGET_H},format=yuv420p"
     elif mode == "crop":
         core = (
             f"scale={_TARGET_W}:{_TARGET_H}:force_original_aspect_ratio=increase,"
-            f"crop={_TARGET_W}:{_TARGET_H}[v]"
+            f"crop={_TARGET_W}:{_TARGET_H},format=yuv420p"
         )
     elif mode == "bars":
         core = (
             f"scale={_TARGET_W}:{_TARGET_H}:force_original_aspect_ratio=decrease,"
-            f"pad={_TARGET_W}:{_TARGET_H}:(ow-iw)/2:(oh-ih)/2:black[v]"
+            f"pad={_TARGET_W}:{_TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p"
         )
     elif mode == "blur":
-        core = _BLUR_GRAPH
+        core = _BLUR_GRAPH.replace("[0:v]", f"[0:v]{transpose_prefix}fps=30,")
+        # Ensure it outputs [v] and uses yuv420p. _BLUR_GRAPH ends with [v]
+        core = core[:-3] + ",format=yuv420p[v]"
+        return core
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'blur', 'crop', or 'bars'.")
 
-    return f"{transpose_prefix}{core}"
+    return f"[0:v]{transpose_prefix}fps=30,{core}[v]"
 
 
 def audio_chain(
@@ -112,7 +115,11 @@ def audio_chain(
     str
         Comma-joined FFmpeg audio filter chain.
     """
-    parts: list[str] = [f"highpass=f={highpass_hz}"]
+    parts: list[str] = [
+        f"highpass=f={highpass_hz}",
+        "aresample=48000",
+        "aformat=channel_layouts=stereo",
+    ]
     if denoise:
         parts.append(denoise)
     if loudnorm:

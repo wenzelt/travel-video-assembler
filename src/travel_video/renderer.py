@@ -71,20 +71,22 @@ def render(
 
     for item in timeline:
         if isinstance(item, Clip):
-            label_filter: str | None = None
+            label_result: tuple[Path, str] | None = None
             if config.overlays.location_label.enabled:
-                label_filter = location_label.build(item)
+                label_result = location_label.build(item)
 
             map_result: tuple[Path, str] | None = None
-            if label_filter is None and config.overlays.mini_map.enabled:
+            if config.overlays.mini_map.enabled:
                 map_result = mini_map.build(item, config)
 
-            extra_inputs = [map_result[0]] if map_result else None
-            overlay_filters: list[str] | None = (
-                [label_filter]
-                if label_filter
-                else ([map_result[1]] if map_result else None)
-            )
+            extra_inputs = []
+            if label_result:
+                extra_inputs.append(label_result[0])
+            if map_result:
+                extra_inputs.append(map_result[0])
+
+            label_idx = 1 if label_result else None
+            map_idx = 1 + (1 if label_result else 0) if map_result else None
 
             segments.append(
                 _normalize_clip(
@@ -93,7 +95,10 @@ def render(
                     af,
                     overlay_sig=overlay_sig,
                     extra_inputs=extra_inputs,
-                    overlay_filters=overlay_filters,
+                    label_filter=label_result[1] if label_result else None,
+                    label_idx=label_idx,
+                    map_filter=map_result[1] if map_result else None,
+                    map_idx=map_idx,
                     dry_run=dry_run,
                 )
             )
@@ -122,7 +127,10 @@ def _normalize_clip(
     *,
     overlay_sig: str = "",
     extra_inputs: list[Path] | None = None,
-    overlay_filters: list[str] | None = None,
+    label_filter: str | None = None,
+    label_idx: int | None = None,
+    map_filter: str | None = None,
+    map_idx: int | None = None,
     dry_run: bool,
 ) -> Path:
     """Return the normalized path for *clip*, encoding it if not already cached.
@@ -141,9 +149,14 @@ def _normalize_clip(
     extra_inputs:
         Additional ``-i`` input paths forwarded to ``normalize_clip``
         (e.g. a mini-map PNG).
-    overlay_filters:
-        Filter-graph fragments to append after the ``vertical_normalize``
-        fragment (comma-separated in the final string).
+    label_filter:
+        Overlay filter fragment for location label.
+    label_idx:
+        Index of the extra input for the label PNG.
+    map_filter:
+        Overlay filter fragment for the mini map.
+    map_idx:
+        Index of the extra input for the map PNG.
     dry_run:
         When ``True``, print FFmpeg commands without executing them.
     """
@@ -156,8 +169,17 @@ def _normalize_clip(
         return norm
 
     vf = vertical_normalize(clip.width, clip.height, clip.rotation)
-    if overlay_filters:
-        vf = vf + "," + ",".join(overlay_filters)
+    if label_filter or map_filter:
+        vf = vf[:-3] + "[v_temp0]"
+        current_pad = "[v_temp0]"
+
+        if label_filter and label_idx is not None:
+            next_pad = "[v_temp1]" if map_filter else "[v]"
+            vf += f";{current_pad}[{label_idx}:v]{label_filter}{next_pad}"
+            current_pad = next_pad
+
+        if map_filter and map_idx is not None:
+            vf += f";{current_pad}[{map_idx}:v]{map_filter}[v]"
 
     commands.normalize_clip(
         clip.path,
@@ -193,8 +215,6 @@ def _generate_separator(
 
     commands.run(
         [
-            "-f",
-            "lavfi",
             "-filter_complex",
             filter_graph,
             "-map",

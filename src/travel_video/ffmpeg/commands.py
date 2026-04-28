@@ -176,6 +176,7 @@ def normalize_clip(
 
     args: list[str] = [
         "-y",
+        "-noautorotate",
         "-i",
         str(input_path),
         *extra_i_args,
@@ -183,6 +184,8 @@ def normalize_clip(
         video_filter,
         "-map",
         "[v]",
+        "-map",
+        "0:a:0?",
         "-af",
         audio_filter,
         "-c:v",
@@ -191,6 +194,7 @@ def normalize_clip(
         bitrate,
         "-c:a",
         "aac",
+        "-shortest",
         str(output_path),
     ]
     run(args, dry_run=dry_run)
@@ -266,7 +270,10 @@ def concat_with_xfade(
         return
 
     # N >= 2: probe durations for offset computation (only clips 0..N-2 are needed)
-    durations: list[float] = [probe_duration(p) for p in inputs[:-1]]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor() as executor:
+        durations = list(executor.map(probe_duration, inputs[:-1]))
 
     # Build label pairs and filter fragments.
     # Initially the streams are labelled [0:v]/[0:a], [1:v]/[1:a], …

@@ -3,12 +3,30 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class OutputConfig(BaseModel):
     resolution: str = "1080x1920"
     container: str = "mkv"
+
+    @field_validator("resolution")
+    @classmethod
+    def _check_resolution(cls, v: str) -> str:
+        if not v or "x" not in v:
+            raise ValueError(f"resolution must be WxH, got {v!r}")
+        parts = v.split("x")
+        if len(parts) != 2:
+            raise ValueError(f"resolution must have exactly one 'x', got {v!r}")
+        try:
+            w = int(parts[0])
+            h = int(parts[1])
+        except ValueError:
+            raise ValueError(f"resolution parts must be integers, got {v!r}") from None
+        
+        if w <= 0 or h <= 0:
+            raise ValueError(f"resolution dimensions must be positive, got {w}x{h}")
+        return f"{w}x{h}"
 
     @property
     def width(self) -> int:

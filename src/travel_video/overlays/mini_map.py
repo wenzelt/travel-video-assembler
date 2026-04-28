@@ -5,12 +5,13 @@ locally, and returns an FFmpeg overlay filter fragment positioning the map
 in the top-right corner.
 
 The decision of whether to show the map for a given clip is deterministic:
-it is based on a hash of the clip path, so the same clip always gets the
-same answer across runs.
+it is based on a SHA1 hash of the clip path, so the same clip always gets the
+same answer across runs regardless of PYTHONHASHSEED.
 """
 
 from __future__ import annotations
 
+import hashlib
 import urllib.request
 from pathlib import Path
 
@@ -27,10 +28,10 @@ _MARGIN = 48
 
 
 def should_show(clip: Clip, *, probability: float = 0.25) -> bool:
-    """Deterministic probability check based on the clip's path hash.
+    """Return True for this clip based on a stable, path-derived hash.
 
-    Uses ``hash(str(clip.path)) % 100 < int(probability * 100)`` so the
-    same clip always produces the same decision regardless of run order.
+    Uses a SHA1 digest of the clip path so the result is identical across
+    interpreter runs regardless of ``PYTHONHASHSEED``.
 
     Args:
         clip:        The clip to evaluate.
@@ -39,7 +40,10 @@ def should_show(clip: Clip, *, probability: float = 0.25) -> bool:
     Returns:
         ``True`` when the map should be shown for this clip.
     """
-    return hash(str(clip.path)) % 100 < int(probability * 100)
+    digest = int(
+        hashlib.sha1(str(clip.path).encode(), usedforsecurity=False).hexdigest(), 16
+    )
+    return digest % 100 < round(probability * 100)
 
 
 def build(clip: Clip, config: Config) -> tuple[Path, str] | None:  # noqa: ARG002
@@ -72,7 +76,12 @@ def build(clip: Clip, config: Config) -> tuple[Path, str] | None:  # noqa: ARG00
     if not png_path.exists():
         url = _OSM_URL.format(lat=clip.gps_lat, lon=clip.gps_lon)
         try:
-            urllib.request.urlretrieve(url, str(png_path))
+            req = urllib.request.Request(url, headers={"User-Agent": "travel-video-assembler/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+                content_type = resp.headers.get("Content-Type", "")
+                if not content_type.startswith("image/"):
+                    raise OSError(f"Unexpected content type from tile server: {content_type!r}")
+                png_path.write_bytes(resp.read())
         except Exception:  # noqa: BLE001
             return None
 
