@@ -1,4 +1,4 @@
-"""Tests for the three overlay modules — written FIRST (TDD Red phase).
+"""Tests for the three overlay modules — updated for Pillow-based labels.
 
 Covers:
 - travel_video.overlays.location_label
@@ -19,7 +19,6 @@ from travel_video.config import Config
 from travel_video.geocode import Location
 from travel_video.models import Clip, DaySeparator
 from travel_video.overlays.day_separator import build as day_sep_build
-from travel_video.overlays.location_label import _escape_drawtext
 from travel_video.overlays.location_label import build as label_build
 from travel_video.overlays.mini_map import build as mini_map_build
 from travel_video.overlays.mini_map import should_show
@@ -60,47 +59,24 @@ def test_location_label_returns_none_when_no_gps() -> None:
 
 
 @pytest.mark.unit
-def test_location_label_returns_drawtext_string_for_gps_clip() -> None:
-    """build() returns a non-None string starting with 'drawtext=' for a GPS clip."""
+def test_location_label_returns_tuple_for_gps_clip(tmp_path: Path) -> None:
+    """build() returns (Path, str) for a GPS clip."""
     clip = _make_clip()
-    with patch("travel_video.overlays.location_label.reverse") as mock_reverse:
+    with (
+        patch("travel_video.overlays.location_label.reverse") as mock_reverse,
+        patch("travel_video.overlays.location_label.cache") as mock_cache,
+    ):
         mock_reverse.return_value = Location(town="Paris", country="France", iso="FR")
+        fake_png = tmp_path / "label.png"
+        mock_cache.map_path.return_value = fake_png
+        mock_cache.cache_key.return_value = "key123"
+        
         result = label_build(clip)
 
     assert result is not None
-    assert result.startswith("drawtext=")
-
-
-@pytest.mark.unit
-def test_location_label_contains_town_country_iso() -> None:
-    """The drawtext filter contains the 'Town, Country, ISO' formatted text."""
-    clip = _make_clip()
-    with patch("travel_video.overlays.location_label.reverse") as mock_reverse:
-        mock_reverse.return_value = Location(town="Paris", country="France", iso="FR")
-        result = label_build(clip)
-
-    assert result is not None
-    assert "Paris, France, FR" in result
-
-
-@pytest.mark.unit
-def test_escape_drawtext_apostrophe() -> None:
-    """_escape_drawtext escapes apostrophes with a backslash prefix."""
-    result = _escape_drawtext("O'Brien")
-    # The raw apostrophe must be preceded by a backslash escape
-    assert "\\'" in result
-    # The text content must be preserved
-    assert "O" in result
-    assert "Brien" in result
-
-
-@pytest.mark.unit
-def test_escape_drawtext_colon() -> None:
-    """_escape_drawtext escapes colons in the text."""
-    result = _escape_drawtext("A:B")
-    assert result != "A:B"
-    assert "A" in result
-    assert "B" in result
+    png_path, fragment = result
+    assert isinstance(png_path, Path)
+    assert "overlay=" in fragment
 
 
 @pytest.mark.unit

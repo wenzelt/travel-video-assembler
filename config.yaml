@@ -3,7 +3,7 @@ output:
   container: mkv
 
 video:
-  encoder: h264_videotoolbox
+  encoder: hevc_videotoolbox
   bitrate: 12M
 
 transitions:

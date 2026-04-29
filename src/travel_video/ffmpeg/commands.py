@@ -176,6 +176,8 @@ def normalize_clip(
 
     args: list[str] = [
         "-y",
+        "-hwaccel",
+        "videotoolbox",
         "-noautorotate",
         "-i",
         str(input_path),
@@ -246,10 +248,10 @@ def concat_with_xfade(
         If FFmpeg exits with a non-zero return code or a duration cannot
         be probed.
     """
-    # Build the -i flags
+    # Build the -i flags with hardware acceleration
     input_flags: list[str] = []
     for p in inputs:
-        input_flags.extend(["-i", str(p)])
+        input_flags.extend(["-hwaccel", "videotoolbox", "-i", str(p)])
 
     n = len(inputs)
 

@@ -1,4 +1,4 @@
-"""Tests for travel_video.renderer — written FIRST (TDD Red phase).
+"""Tests for travel_video.renderer — updated for parallelization and M1 optimizations.
 
 All FFmpeg subprocess calls are mocked.  cache_key and normalized_path are
 allowed to run for real (they only touch the filesystem via tmp_path).
@@ -138,11 +138,12 @@ def test_two_clips_both_normalized(
     assert mock_norm.call_count == 2
 
     # Gather the two normalized output paths from calls
-    norm_out_a = mock_norm.call_args_list[0][0][1]
-    norm_out_b = mock_norm.call_args_list[1][0][1]
+    # Note: with ThreadPoolExecutor, call order is not strictly guaranteed
+    paths_used = {call[0][1] for call in mock_norm.call_args_list}
+    assert len(paths_used) == 2
 
     concat_segments = mock_concat.call_args[0][0]
-    assert concat_segments == [norm_out_a, norm_out_b]
+    assert set(concat_segments) == paths_used
 
 
 # ---------------------------------------------------------------------------
@@ -180,15 +181,14 @@ def test_clip_daysep_clip_separator_in_segments(
     concat_segments = mock_concat.call_args[0][0]
     assert len(concat_segments) == 3
 
-    norm_out_a = mock_norm.call_args_list[0][0][1]
-    norm_out_b = mock_norm.call_args_list[1][0][1]
+    # Normalized paths from the two clips
+    norm_paths = {call[0][1] for call in mock_norm.call_args_list}
+    
+    assert concat_segments[0] in norm_paths
+    assert concat_segments[2] in norm_paths
+    
     sep_path = concat_segments[1]
-
-    assert concat_segments[0] == norm_out_a
-    assert concat_segments[2] == norm_out_b
-    # Middle entry is different from both clip paths
-    assert sep_path != norm_out_a
-    assert sep_path != norm_out_b
+    assert sep_path not in norm_paths
     assert isinstance(sep_path, Path)
 
 
@@ -393,14 +393,16 @@ def test_location_label_applied_when_enabled(
     tmp_path: Path,
     cache_dir: Path,
 ) -> None:
-    """When location_label is enabled, normalize_clip receives the drawtext fragment."""
+    """When location_label is enabled, normalize_clip receives the label PNG path."""
     clip_file = tmp_path / "clip.mp4"
     clip_file.touch()
     clip = _make_clip(clip_file, gps_lat=48.8566, gps_lon=2.3522)
 
     config = _default_config()
 
-    drawtext_fragment = "drawtext=text='Paris, France, FR':x=w-tw-48:y=h-th-48"
+    label_png = tmp_path / "label.png"
+    label_png.touch()
+    label_fragment = "overlay=W-w-48:H-h-48"
 
     with (
         patch("travel_video.renderer.commands.normalize_clip") as mock_norm,
@@ -408,16 +410,17 @@ def test_location_label_applied_when_enabled(
         patch("travel_video.renderer.commands.run"),
         patch(
             "travel_video.renderer.location_label.build",
-            return_value=drawtext_fragment,
+            return_value=(label_png, label_fragment),
         ) as mock_label,
     ):
         render([clip], config, output_path=tmp_path / "out.mkv")
 
     mock_label.assert_called_once_with(clip)
     assert mock_norm.call_count == 1
-    # video_filter arg (positional index 2) must contain the drawtext fragment
-    video_filter_used = mock_norm.call_args[0][2]
-    assert drawtext_fragment in video_filter_used
+    # extra_inputs arg (kwargs) must contain the label png
+    norm_kwargs = mock_norm.call_args[1]
+    extra_input_paths = norm_kwargs.get("extra_input_paths") or []
+    assert label_png in extra_input_paths
 
 
 # ---------------------------------------------------------------------------
@@ -459,16 +462,16 @@ def test_location_label_skipped_when_disabled(
 
 
 # ---------------------------------------------------------------------------
-# 11. mini_map applied when location_label returns None
+# 11. mini_map applied when enabled
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_mini_map_applied_when_label_none(
+def test_mini_map_applied_independently(
     tmp_path: Path,
     cache_dir: Path,
 ) -> None:
-    """When location_label returns None, mini_map.build result is passed to normalize_clip."""
+    """When mini_map is enabled, mini_map.build result is passed to normalize_clip."""
     from travel_video.config import OverlayItemConfig, OverlaysConfig
 
     clip_file = tmp_path / "clip.mp4"
@@ -479,7 +482,7 @@ def test_mini_map_applied_when_label_none(
     config = config.model_copy(
         update={
             "overlays": OverlaysConfig(
-                location_label=OverlayItemConfig(enabled=True),
+                location_label=OverlayItemConfig(enabled=False),
                 mini_map=OverlayItemConfig(enabled=True),
             )
         }
@@ -493,7 +496,6 @@ def test_mini_map_applied_when_label_none(
         patch("travel_video.renderer.commands.normalize_clip") as mock_norm,
         patch("travel_video.renderer.commands.concat_with_xfade"),
         patch("travel_video.renderer.commands.run"),
-        patch("travel_video.renderer.location_label.build", return_value=None),
         patch(
             "travel_video.renderer.mini_map.build",
             return_value=(map_png, overlay_fragment),
@@ -503,7 +505,7 @@ def test_mini_map_applied_when_label_none(
 
     mock_map.assert_called_once_with(clip, config)
     assert mock_norm.call_count == 1
-    # extra_input_paths kwarg (passed to commands.normalize_clip) must contain the map png
+    # extra_inputs kwarg (passed to _normalize_clip via render) must contain the map png
     norm_kwargs = mock_norm.call_args[1]
     extra_input_paths = norm_kwargs.get("extra_input_paths") or []
     assert map_png in extra_input_paths

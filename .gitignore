@@ -10,3 +10,15 @@ output/
 dist/
 .coverage
 htmlcov/
+.DS_Store
+
+# Video and Media files
+*.mkv
+*.mp4
+*.MOV
+*.mov
+*.m4v
+
+# Test data folders
+tests/test_video_files/
+JGA/

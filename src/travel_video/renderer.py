@@ -69,7 +69,9 @@ def render(
         usedforsecurity=False,
     ).hexdigest()[:8]
 
-    for item in timeline:
+    from concurrent.futures import ThreadPoolExecutor
+
+    def process_item(item: TimelineItem) -> Path:
         if isinstance(item, Clip):
             label_result: tuple[Path, str] | None = None
             if config.overlays.location_label.enabled:
@@ -88,22 +90,26 @@ def render(
             label_idx = 1 if label_result else None
             map_idx = 1 + (1 if label_result else 0) if map_result else None
 
-            segments.append(
-                _normalize_clip(
-                    item,
-                    config,
-                    af,
-                    overlay_sig=overlay_sig,
-                    extra_inputs=extra_inputs,
-                    label_filter=label_result[1] if label_result else None,
-                    label_idx=label_idx,
-                    map_filter=map_result[1] if map_result else None,
-                    map_idx=map_idx,
-                    dry_run=dry_run,
-                )
+            return _normalize_clip(
+                item,
+                config,
+                af,
+                overlay_sig=overlay_sig,
+                extra_inputs=extra_inputs,
+                label_filter=label_result[1] if label_result else None,
+                label_idx=label_idx,
+                map_filter=map_result[1] if map_result else None,
+                map_idx=map_idx,
+                dry_run=dry_run,
             )
         elif isinstance(item, DaySeparator):
-            segments.append(_generate_separator(sep_cache_key, config, dry_run=dry_run))
+            return _generate_separator(sep_cache_key, config, dry_run=dry_run)
+        raise TypeError(f"Unknown timeline item type: {type(item)}")
+
+    # Parallelize normalization using a thread pool.
+    # FFmpeg is subprocess-based, so threads are fine for I/O and process management.
+    with ThreadPoolExecutor() as executor:
+        segments = list(executor.map(process_item, timeline))
 
     commands.concat_with_xfade(
         segments,

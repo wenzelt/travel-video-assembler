@@ -71,21 +71,21 @@ def vertical_normalize(
     already_vertical = eff_h >= eff_w
 
     if already_vertical:
-        core = f"scale={_TARGET_W}:{_TARGET_H},format=yuv420p"
+        core = f"scale={_TARGET_W}:{_TARGET_H},format=nv12"
     elif mode == "crop":
         core = (
             f"scale={_TARGET_W}:{_TARGET_H}:force_original_aspect_ratio=increase,"
-            f"crop={_TARGET_W}:{_TARGET_H},format=yuv420p"
+            f"crop={_TARGET_W}:{_TARGET_H},format=nv12"
         )
     elif mode == "bars":
         core = (
             f"scale={_TARGET_W}:{_TARGET_H}:force_original_aspect_ratio=decrease,"
-            f"pad={_TARGET_W}:{_TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p"
+            f"pad={_TARGET_W}:{_TARGET_H}:(ow-iw)/2:(oh-ih)/2:black,format=nv12"
         )
     elif mode == "blur":
         core = _BLUR_GRAPH.replace("[0:v]", f"[0:v]{transpose_prefix}fps=30,")
         # Ensure it outputs [v] and uses yuv420p. _BLUR_GRAPH ends with [v]
-        core = core[:-3] + ",format=yuv420p[v]"
+        core = core[:-3] + ",format=nv12[v]"
         return core
     else:
         raise ValueError(f"Unknown mode {mode!r}. Expected 'blur', 'crop', or 'bars'.")
