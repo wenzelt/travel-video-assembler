@@ -511,6 +511,174 @@ def test_extract_calls_cache_set_on_miss(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Bug: has_audio always False because _EXIFTOOL_FIELDS didn't request audio tags
+# ---------------------------------------------------------------------------
+
+
+def test_exiftool_command_requests_audio_channels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """exiftool invocation must include -AudioChannels so audio detection works."""
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:01:01 00:00:00",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+        "AudioChannels": 2,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    with (
+        patch("subprocess.run", return_value=mock_proc) as mock_run,
+        patch("travel_video.cache.cache_key", return_value="test-key-audio-cmd"),
+        patch("travel_video.cache.metadata_cache_get", return_value=None),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        extract(video)
+
+    called_cmd = mock_run.call_args[0][0]
+    assert "-AudioChannels" in called_cmd, (
+        "ExifTool command must include -AudioChannels; without it has_audio is always False"
+    )
+
+
+def test_exiftool_command_requests_audio_sample_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """exiftool invocation must include -AudioSampleRate as a fallback audio presence signal."""
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:01:01 00:00:00",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+        "AudioSampleRate": 48000,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    with (
+        patch("subprocess.run", return_value=mock_proc) as mock_run,
+        patch("travel_video.cache.cache_key", return_value="test-key-audio-sr"),
+        patch("travel_video.cache.metadata_cache_get", return_value=None),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        extract(video)
+
+    called_cmd = mock_run.call_args[0][0]
+    assert "-AudioSampleRate" in called_cmd
+
+
+def test_has_audio_true_when_exiftool_returns_audio_channels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """has_audio is True when ExifTool reports AudioChannels > 0."""
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:01:01 00:00:00",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+        "AudioChannels": 2,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    with (
+        patch("subprocess.run", return_value=mock_proc),
+        patch("travel_video.cache.cache_key", return_value="test-key-has-audio-ch"),
+        patch("travel_video.cache.metadata_cache_get", return_value=None),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        clip = extract(video)
+
+    assert clip.has_audio is True
+
+
+def test_has_audio_true_when_exiftool_returns_audio_sample_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """has_audio is True when ExifTool reports AudioSampleRate (even without AudioChannels)."""
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:01:01 00:00:00",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+        "AudioSampleRate": 44100,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    with (
+        patch("subprocess.run", return_value=mock_proc),
+        patch("travel_video.cache.cache_key", return_value="test-key-has-audio-sr"),
+        patch("travel_video.cache.metadata_cache_get", return_value=None),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        clip = extract(video)
+
+    assert clip.has_audio is True
+
+
+def test_has_audio_false_when_no_audio_tags_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """has_audio is False when ExifTool returns no audio-related tags (video-only clip)."""
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:01:01 00:00:00",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    with (
+        patch("subprocess.run", return_value=mock_proc),
+        patch("travel_video.cache.cache_key", return_value="test-key-no-audio"),
+        patch("travel_video.cache.metadata_cache_get", return_value=None),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        clip = extract(video)
+
+    assert clip.has_audio is False
+
+
 def test_extract_gps_dms_south_west(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

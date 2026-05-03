@@ -32,6 +32,9 @@ _EXIFTOOL_FIELDS = [
     "-DurationValue",
     "-ImageWidth",
     "-ImageHeight",
+    "-AudioChannels",
+    "-AudioFormat",
+    "-AudioSampleRate",
 ]
 
 _DATE_FMT = "%Y:%m:%d %H:%M:%S"
@@ -142,7 +145,9 @@ def _parse(path: Path, tags: dict) -> Clip:
         rotation=_parse_rotation(tags),
         width=int(tags.get("ImageWidth", 0)),
         height=int(tags.get("ImageHeight", 0)),
-        has_audio=bool(tags.get("AudioChannels") or tags.get("AudioFormat")),
+        has_audio=bool(
+            tags.get("AudioChannels") or tags.get("AudioFormat") or tags.get("AudioSampleRate")
+        ),
     )
 
 
