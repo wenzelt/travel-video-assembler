@@ -35,6 +35,21 @@ def _fmt_duration(seconds: float) -> str:
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
+def _extract_clips(paths: list[Path]) -> list[Clip]:
+    clips: list[Clip] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task("Reading metadata…", total=None)
+        for path in paths:
+            progress.update(task_id, description=f"Reading {path.name}…")
+            clips.append(metadata.extract(path))
+    return clips
+
+
 def _print_timeline(timeline: list[TimelineItem]) -> None:
     """Print a rich table summarizing the timeline."""
     table = Table(title="Planned Timeline", show_header=True, header_style="bold cyan")
@@ -134,17 +149,7 @@ def render(
         return
 
     # --- Extract metadata with progress bar ----------------------------------
-    clips: list[Clip] = []
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task_id = progress.add_task("Reading metadata…", total=None)
-        for path in paths:
-            progress.update(task_id, description=f"Reading {path.name}…")
-            clips.append(metadata.extract(path))
+    clips = _extract_clips(paths)
 
     # --- Build timeline -------------------------------------------------------
     timeline = planner.build_timeline(clips)
@@ -201,17 +206,7 @@ def plan(
     paths = scanner.scan(input)
 
     # --- Extract metadata with progress bar ----------------------------------
-    clips: list[Clip] = []
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task_id = progress.add_task("Reading metadata…", total=None)
-        for path in paths:
-            progress.update(task_id, description=f"Reading {path.name}…")
-            clips.append(metadata.extract(path))
+    clips = _extract_clips(paths)
 
     # --- Build timeline ------------------------------------------------------
     timeline = planner.build_timeline(clips)

@@ -210,6 +210,24 @@ def test_probe_duration_falls_back_to_format_duration_when_stream_is_na() -> Non
 
 
 @pytest.mark.unit
+def test_probe_duration_raises_when_format_fallback_also_unparseable() -> None:
+    """probe_duration raises FFmpegError when both stream and format durations are unparseable."""
+    mock_stream_res = MagicMock(spec=subprocess.CompletedProcess)
+    mock_stream_res.returncode = 0
+    mock_stream_res.stdout = b"N/A\n"
+
+    mock_format_res = MagicMock(spec=subprocess.CompletedProcess)
+    mock_format_res.returncode = 0
+    mock_format_res.stdout = b"N/A\n"
+
+    with (
+        patch("subprocess.run", side_effect=[mock_stream_res, mock_format_res]),
+        pytest.raises(FFmpegError, match="[Cc]ould not parse"),
+    ):
+        probe_duration(Path("/some/video.mp4"))
+
+
+@pytest.mark.unit
 def test_probe_duration_raises_on_empty_output() -> None:
     """probe_duration raises FFmpegError when ffprobe stdout is empty."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
@@ -518,3 +536,299 @@ def test_concat_with_xfade_probes_all_inputs_for_alignment() -> None:
 
     # BOTH clips must be probed now
     assert len(probe_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# M1 Mac — hardware acceleration in normalize_clip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalize_clip_uses_videotoolbox_hwaccel() -> None:
+    """-hwaccel videotoolbox must appear in normalize_clip args for M1 hardware decode."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/clip.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    assert "-hwaccel" in called_args
+    idx = called_args.index("-hwaccel")
+    assert called_args[idx + 1] == "videotoolbox"
+
+
+@pytest.mark.unit
+def test_normalize_clip_hwaccel_precedes_input() -> None:
+    """-hwaccel videotoolbox must appear before the main -i flag."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/clip.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    idx_hwaccel = called_args.index("-hwaccel")
+    idx_i = called_args.index("-i")
+    assert idx_hwaccel < idx_i
+
+
+@pytest.mark.unit
+def test_normalize_clip_uses_noautorotate() -> None:
+    """-noautorotate must be present so rotation is handled by the filter graph, not FFmpeg."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/clip.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]transpose=1,scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    assert "-noautorotate" in called_args
+
+
+# ---------------------------------------------------------------------------
+# M1 Mac — hardware acceleration in concat_with_xfade
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_concat_with_xfade_single_input_uses_videotoolbox() -> None:
+    """Single-input concat_with_xfade must use -hwaccel videotoolbox for the input."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with (
+        patch("subprocess.run", return_value=mock_result) as mock_sub,
+        patch("travel_video.ffmpeg.commands.probe_duration", return_value=5.0),
+    ):
+        concat_with_xfade(
+            inputs=[Path("/clips/a.mp4")],
+            output=Path("/out/final.mp4"),
+            xfade_seconds=0.5,
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    assert "-hwaccel" in called_args
+    idx = called_args.index("-hwaccel")
+    assert called_args[idx + 1] == "videotoolbox"
+
+
+@pytest.mark.unit
+def test_concat_with_xfade_two_inputs_videotoolbox_per_input() -> None:
+    """concat_with_xfade must put -hwaccel videotoolbox immediately before each -i."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    inputs = [Path("/clips/a.mp4"), Path("/clips/b.mp4")]
+
+    with (
+        patch("subprocess.run", return_value=mock_result) as mock_sub,
+        patch("travel_video.ffmpeg.commands.probe_duration", return_value=5.0),
+    ):
+        concat_with_xfade(
+            inputs=inputs,
+            output=Path("/out/final.mp4"),
+            xfade_seconds=0.5,
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    input_paths = {str(p) for p in inputs}
+    # Each -i must be immediately preceded by -hwaccel videotoolbox
+    i_indices = [
+        idx
+        for idx, a in enumerate(called_args)
+        if a == "-i" and called_args[idx + 1] in input_paths
+    ]
+    assert len(i_indices) == 2, "expected two -i flags for two inputs"
+    for idx_i in i_indices:
+        assert called_args[idx_i - 2] == "-hwaccel"
+        assert called_args[idx_i - 1] == "videotoolbox"
+
+
+# ---------------------------------------------------------------------------
+# M1 Mac — nv12 pixel format in filtergraph
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_vertical_normalize_nv12_format_in_all_modes() -> None:
+    """All vertical_normalize modes must output format=nv12 for VideoToolbox compatibility."""
+    from travel_video.ffmpeg.filters import vertical_normalize
+
+    for mode in ("blur", "crop", "bars"):
+        result = vertical_normalize(width=1920, height=1080, rotation=0, mode=mode)  # type: ignore[arg-type]
+        assert "format=nv12" in result, f"format=nv12 missing for mode={mode!r}"
+
+
+@pytest.mark.unit
+def test_vertical_normalize_nv12_for_vertical_clip() -> None:
+    """An already-vertical clip must still emit format=nv12."""
+    from travel_video.ffmpeg.filters import vertical_normalize
+
+    result = vertical_normalize(width=1080, height=1920, rotation=0, mode="blur")
+    assert "format=nv12" in result
+
+
+# ---------------------------------------------------------------------------
+# M1 Mac — silent audio injection for clips without audio
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalize_clip_no_audio_injects_anullsrc() -> None:
+    """normalize_clip with has_audio=False must inject anullsrc as a silent audio source."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/silent.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+            has_audio=False,
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    full_cmd = " ".join(called_args)
+    assert "anullsrc" in full_cmd
+    assert "lavfi" in full_cmd
+
+
+@pytest.mark.unit
+def test_normalize_clip_no_audio_maps_injected_stream() -> None:
+    """With has_audio=False and no extras, audio maps from stream index 1 (the anullsrc)."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/silent.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+            has_audio=False,
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    # The -map for audio must reference stream 1:a:0 (input 0 is the clip, input 1 is anullsrc)
+    assert "1:a:0" in called_args
+
+
+@pytest.mark.unit
+def test_normalize_clip_no_audio_with_one_extra_maps_correct_index() -> None:
+    """With has_audio=False and 1 extra input, audio must map from stream index 2."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/silent.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+            extra_input_paths=[Path("/cache/label.png")],
+            has_audio=False,
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    # input 0=clip, input 1=extra PNG, input 2=anullsrc
+    assert "2:a:0" in called_args
+
+
+@pytest.mark.unit
+def test_normalize_clip_has_audio_maps_optional_stream() -> None:
+    """With has_audio=True (default), audio must use 0:a:0? (optional — clip may lack audio)."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/clip.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+            has_audio=True,
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    assert "0:a:0?" in called_args
+
+
+@pytest.mark.unit
+def test_normalize_clip_has_audio_does_not_inject_anullsrc() -> None:
+    """With has_audio=True, no anullsrc must be injected."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/clip.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="h264_videotoolbox",
+            bitrate="12M",
+            has_audio=True,
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    assert "anullsrc" not in " ".join(called_args)
+
+
+# ---------------------------------------------------------------------------
+# M1 Mac — hevc_videotoolbox encoder support
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalize_clip_accepts_hevc_videotoolbox_encoder() -> None:
+    """normalize_clip must accept hevc_videotoolbox as the encoder (M1 HEVC encode)."""
+    mock_result = MagicMock(spec=subprocess.CompletedProcess)
+    mock_result.returncode = 0
+
+    with patch("subprocess.run", return_value=mock_result) as mock_sub:
+        normalize_clip(
+            input_path=Path("/input/clip.mp4"),
+            output_path=Path("/output/norm.mp4"),
+            video_filter="[0:v]scale=1080:1920[v]",
+            audio_filter="highpass=f=120,apad",
+            encoder="hevc_videotoolbox",
+            bitrate="12M",
+        )
+
+    called_args = mock_sub.call_args[0][0]
+    assert "hevc_videotoolbox" in called_args

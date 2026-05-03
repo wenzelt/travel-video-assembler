@@ -142,7 +142,7 @@ def _parse(path: Path, tags: dict) -> Clip:
         rotation=_parse_rotation(tags),
         width=int(tags.get("ImageWidth", 0)),
         height=int(tags.get("ImageHeight", 0)),
-        has_audio=bool(tags.get("AudioChannels")) or bool(tags.get("AudioFormat")),
+        has_audio=bool(tags.get("AudioChannels") or tags.get("AudioFormat")),
     )
 
 
