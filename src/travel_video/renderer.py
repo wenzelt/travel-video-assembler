@@ -176,7 +176,8 @@ def _normalize_clip(
         When ``True``, print FFmpeg commands without executing them.
     """
     base_key = cache_key(clip.path)
-    key = f"{base_key}_{overlay_sig}" if overlay_sig else base_key
+    audio_tag = "a1" if clip.has_audio else "a0"
+    key = f"{base_key}_{overlay_sig}_{audio_tag}" if overlay_sig else f"{base_key}_{audio_tag}"
     norm = normalized_path(key)
 
     if norm.exists():

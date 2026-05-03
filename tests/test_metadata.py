@@ -500,7 +500,10 @@ def test_extract_calls_cache_set_on_miss(
 
     mock_set.assert_called_once()
     key_arg, data_arg = mock_set.call_args[0]
-    assert key_arg == "test-key-setcheck"
+    assert key_arg.startswith("test-key-setcheck"), (
+        "cache key must start with the path-based hash"
+    )
+    assert "_" in key_arg, "cache key must include a fields-signature suffix"
     # Verify the stored data is JSON-serialisable
     serialised = json.dumps(data_arg)
     assert serialised  # non-empty
@@ -677,6 +680,55 @@ def test_has_audio_false_when_no_audio_tags_present(
         clip = extract(video)
 
     assert clip.has_audio is False
+
+
+def test_metadata_cache_key_is_versioned_by_exiftool_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The key passed to metadata_cache_get must include a signature of _EXIFTOOL_FIELDS.
+
+    When fields are added or removed, old cached values are silently wrong
+    (e.g. has_audio was always False because AudioChannels was missing).
+    Including a field-set hash in the key forces an automatic cache miss
+    whenever the requested fields change.
+    """
+    monkeypatch.setenv("TRAVEL_VIDEO_CACHE_DIR", str(tmp_path / "cache"))
+
+    video = tmp_path / "clip.mp4"
+    video.touch()
+
+    exif_data = json.dumps([{
+        "SourceFile": str(video),
+        "CreateDate": "2024:01:01 00:00:00",
+        "Duration": 5.0,
+        "ImageWidth": 1920,
+        "ImageHeight": 1080,
+        "AudioChannels": 2,
+    }])
+    mock_proc = MagicMock(spec=subprocess.CompletedProcess)
+    mock_proc.returncode = 0
+    mock_proc.stdout = exif_data
+
+    used_keys: list[str] = []
+
+    def capture_key(key: str) -> None:
+        used_keys.append(key)
+        return None  # always cache miss
+
+    with (
+        patch("subprocess.run", return_value=mock_proc),
+        patch("travel_video.cache.cache_key", return_value="base-key"),
+        patch("travel_video.cache.metadata_cache_get", side_effect=capture_key),
+        patch("travel_video.cache.metadata_cache_set"),
+    ):
+        extract(video)
+
+    assert used_keys, "metadata_cache_get must be called"
+    key_used = used_keys[0]
+    assert key_used != "base-key", (
+        "cache key must include more than just the path hash — "
+        "add an _EXIFTOOL_FIELDS signature so adding new fields busts old entries"
+    )
 
 
 def test_extract_gps_dms_south_west(

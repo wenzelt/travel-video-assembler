@@ -224,8 +224,9 @@ def test_cache_hit_skips_normalization(
     ).hexdigest()[:8]
 
     # Pre-populate the cache with a fake normalized file using the full key.
+    # Key format: {base}_{overlay_sig}_{audio_tag} where audio_tag is "a1" for has_audio=True.
     base_key = cache_key(clip_file)
-    full_key = f"{base_key}_{overlay_sig}"
+    full_key = f"{base_key}_{overlay_sig}_a1"
     expected_norm = normalized_path(full_key)
     expected_norm.touch()
 
@@ -509,3 +510,63 @@ def test_mini_map_applied_independently(
     norm_kwargs = mock_norm.call_args[1]
     extra_input_paths = norm_kwargs.get("extra_input_paths") or []
     assert map_png in extra_input_paths
+
+
+# ---------------------------------------------------------------------------
+# Cache key must encode has_audio so a has_audio change forces re-encode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalized_cache_key_differs_by_has_audio(
+    tmp_path: Path,
+    cache_dir: Path,
+) -> None:
+    """Clips at the same path with different has_audio produce different normalized paths.
+
+    When a clip's has_audio status changes (e.g. because the ExifTool fields
+    were updated), the old silently-silent normalized file must NOT be reused.
+    Including has_audio in the cache key forces a re-encode automatically.
+    """
+    clip_file = tmp_path / "clip.mp4"
+    clip_file.touch()
+
+    def _make_clip_audio(has_audio: bool) -> Clip:
+        return Clip(
+            path=clip_file,
+            duration_s=5.0,
+            creation_time=datetime(2024, 7, 1, 12, 0, 0, tzinfo=UTC),
+            gps_lat=None,
+            gps_lon=None,
+            rotation=0,
+            width=1080,
+            height=1920,
+            has_audio=has_audio,
+        )
+
+    clip_with_audio = _make_clip_audio(has_audio=True)
+    clip_without_audio = _make_clip_audio(has_audio=False)
+
+    output = tmp_path / "out.mkv"
+    config = _default_config()
+
+    normalized_paths: list[Path] = []
+
+    def capture_norm(input_path: Path, output_path: Path, *args: object, **kwargs: object) -> None:
+        normalized_paths.append(output_path)
+
+    with (
+        patch("travel_video.renderer.commands.normalize_clip", side_effect=capture_norm),
+        patch("travel_video.renderer.commands.concat_with_xfade"),
+        patch("travel_video.renderer.commands.run"),
+        patch("travel_video.renderer.location_label.build", return_value=None),
+        patch("travel_video.renderer.mini_map.build", return_value=None),
+    ):
+        render([clip_with_audio], config, output)
+        render([clip_without_audio], config, output)
+
+    assert len(normalized_paths) == 2, "normalize_clip must be called for each render"
+    assert normalized_paths[0] != normalized_paths[1], (
+        "normalized cache path must differ when has_audio differs — "
+        "otherwise old silent clips are silently reused after the audio fix"
+    )

@@ -6,6 +6,7 @@ in the metadata cache so repeated calls for the same file version are instant.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -36,6 +37,12 @@ _EXIFTOOL_FIELDS = [
     "-AudioFormat",
     "-AudioSampleRate",
 ]
+
+# Short hash of the requested fields — included in metadata cache keys so that
+# adding/removing fields automatically invalidates old cached results.
+_FIELDS_SIG = hashlib.sha1(
+    "|".join(_EXIFTOOL_FIELDS).encode(), usedforsecurity=False
+).hexdigest()[:8]
 
 _DATE_FMT = "%Y:%m:%d %H:%M:%S"
 
@@ -72,7 +79,7 @@ def extract(path: Path) -> Clip:
     Raises:
         RuntimeError: When ``exiftool`` exits with a non-zero return code.
     """
-    key = cache.cache_key(path)
+    key = f"{cache.cache_key(path)}_{_FIELDS_SIG}"
 
     cached = cache.metadata_cache_get(key)
     if cached is not None:
