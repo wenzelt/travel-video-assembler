@@ -9,9 +9,9 @@ A Python CLI tool designed specifically for Apple Silicon Macs to seamlessly ass
 - **Dynamic Overlays:**
   - **Location Labels:** Auto-generates text overlays in the bottom-right corner ("Town, Country, ISO") using reverse geocoding from EXIF GPS data.
   - **Mini-Maps:** Randomly inserts (default 25% chance) a small OpenStreetMap tile in the top-right corner to highlight your travel path.
-- **Audio Processing:** Runs a professional normalization pipeline (`highpass` → `afftdn` (denoise) → `loudnorm`) over all clips.
-- **High Performance:** Leverages Apple's native VideoToolbox (`h264_videotoolbox` / `hevc_videotoolbox`) hardware acceleration for rapid rendering.
-- **Smart Caching:** Avoids redundant work by locally caching normalized clips, extracted metadata, generated location labels, and map tiles across runs in `.travel_video_cache/`.
+- **Audio Processing:** Runs a professional normalization pipeline (`highpass` → `afftdn` (denoise) → `loudnorm`) over all clips. Clips without an audio stream (e.g. screen recordings or silent action-cam footage) automatically receive a silent track so they concatenate cleanly.
+- **High Performance:** Leverages Apple's native VideoToolbox (`h264_videotoolbox` / `hevc_videotoolbox`) hardware acceleration for rapid rendering, with parallel clip normalization via a thread pool.
+- **Smart Caching:** Avoids redundant work by locally caching normalized clips, extracted metadata, generated location labels, and map tiles across runs in `.travel_video_cache/`. Cache entries are automatically invalidated when ExifTool fields or `has_audio` status change, so you never need to manually clear the cache after an update.
 
 ---
 
@@ -109,7 +109,7 @@ overlays:
 When `render` is called, `travel-video-assembler` proceeds through these distinct steps:
 
 1. **Scan:** Traverses the target directory, discovering valid media files, and sorts them exclusively by their creation date.
-2. **Metadata Extraction:** Shells out to `ExifTool` to pull EXIF creation times, duration values, and GPS tracking (handling directionality conversions like `N` / `W`).
+2. **Metadata Extraction:** Shells out to `ExifTool` to pull EXIF creation times, duration values, GPS coordinates, and audio stream presence (`AudioChannels`, `AudioFormat`, `AudioSampleRate`). Falls back to file `mtime` when no EXIF date is present.
 3. **Planning & Grouping:** Segments clips into distinct travel days based on chronological metadata. Between distinct days, it queues a synthetic 3-second black screen separator.
 4. **Normalization & Overlays:** Every clip is processed independently into `.travel_video_cache/`. It guarantees the output is strictly vertical (`1080x1920`), correctly rotated avoiding FFmpeg's autorotate conflicts, enforces exact audio/video synchronization using `-shortest`, and bakes Pillow-generated Location and OpenStreetMap Overlays.
 5. **Timeline Composition:** Translates the planned timeline into an exhaustive `xfade` (video) and `acrossfade` (audio) `filter_complex` FFmpeg chain.
@@ -121,5 +121,7 @@ When `render` is called, `travel-video-assembler` proceeds through these distinc
 
 - **Geocoding Timeouts (`GeocoderTimedOut`):**
   If internet connection is lost or the Nominatim geocoding service limits your rate, the render will temporarily warn you and skip overlaying the location for those specific clips, gracefully continuing the rest of the rendering.
+- **No audio in the output video:**
+  This can occur if the metadata cache was written by an older version of the tool (before audio detection was added). The cache now auto-invalidates when ExifTool fields change, so simply re-running the render will rebuild the cache correctly. If you still see no audio, check that `exiftool` can read the source clips with `exiftool -AudioChannels -AudioFormat <clip>`.
 - **Audio "Clicks" or Missing Transitions:**
   If crossfades appear as freeze frames, ensure that all input clips are standard variable or constant frame rate. The normalization phase specifically bounds streams with `fps=30` and `-shortest` to prevent track imbalances.
