@@ -154,12 +154,13 @@ def normalize_clip(
     *,
     extra_input_paths: list[Path] | None = None,
     dry_run: bool = False,
+    has_audio: bool = True,
 ) -> None:
     """Normalise a single clip to 1080×1920 with the given filter settings.
 
     Builds and runs::
 
-        ffmpeg -y -i <input_path> [-i <extra_input> ...]
+        ffmpeg -y -i <input_path> [-i <extra_input> ...] [-f lavfi -i anullsrc...]
           -filter_complex "<video_filter>" -map "[v]"
           -af "<audio_filter>"
           -c:v <encoder> -b:v <bitrate>
@@ -185,6 +186,8 @@ def normalize_clip(
         before ``-filter_complex``.
     dry_run:
         When ``True``, print the command and skip execution.
+    has_audio:
+        If ``False``, injects a silent audio stream to ensure the output has one.
 
     Raises
     ------
@@ -195,6 +198,14 @@ def normalize_clip(
     for extra in extra_input_paths or []:
         extra_i_args.extend(["-i", str(extra)])
 
+    if has_audio:
+        audio_input: list[str] = []
+        audio_map = ["-map", "0:a:0?"]
+    else:
+        audio_input = ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        idx = 1 + len(extra_input_paths or [])
+        audio_map = ["-map", f"{idx}:a:0"]
+
     args: list[str] = [
         "-y",
         "-hwaccel",
@@ -203,12 +214,12 @@ def normalize_clip(
         "-i",
         str(input_path),
         *extra_i_args,
+        *audio_input,
         "-filter_complex",
         video_filter,
         "-map",
         "[v]",
-        "-map",
-        "0:a:0?",
+        *audio_map,
         "-af",
         audio_filter,
         "-c:v",

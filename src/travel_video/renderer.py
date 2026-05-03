@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from travel_video.cache import cache_key, normalized_path
@@ -23,8 +24,6 @@ from travel_video.overlays import location_label, mini_map
 
 log = logging.getLogger(__name__)
 
-
-from typing import Callable
 
 def render(
     timeline: list[TimelineItem],
@@ -206,6 +205,7 @@ def _normalize_clip(
         config.video.bitrate,
         extra_input_paths=extra_inputs,
         dry_run=dry_run,
+        has_audio=clip.has_audio,
     )
     return norm
 

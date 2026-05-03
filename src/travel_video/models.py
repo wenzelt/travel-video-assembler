@@ -15,6 +15,7 @@ class Clip:
     rotation: int
     width: int
     height: int
+    has_audio: bool = True
 
     @property
     def is_vertical(self) -> bool:
