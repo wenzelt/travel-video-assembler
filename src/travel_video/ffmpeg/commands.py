@@ -95,8 +95,10 @@ def probe_duration(path: Path) -> float:
         "ffprobe",
         "-v",
         "quiet",
+        "-select_streams",
+        "v:0",
         "-show_entries",
-        "format=duration",
+        "stream=duration",
         "-of",
         "csv=p=0",
         str(path),
@@ -115,6 +117,25 @@ def probe_duration(path: Path) -> float:
     try:
         return float(raw)
     except ValueError:
+        if raw == "N/A":
+            fmt_cmd = [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ]
+            fmt_result = subprocess.run(fmt_cmd, capture_output=True)  # noqa: S603
+            if fmt_result.returncode == 0:
+                fmt_raw = fmt_result.stdout.decode(errors="replace").strip()
+                try:
+                    return float(fmt_raw)
+                except ValueError:
+                    pass
+
         raise FFmpegError(f"Could not parse ffprobe duration output as float: {raw!r}") from None
 
 
@@ -271,25 +292,29 @@ def concat_with_xfade(
         run(args, dry_run=dry_run)
         return
 
-    # N >= 2: probe durations for offset computation (only clips 0..N-2 are needed)
+    # N >= 2: probe durations for all inputs to ensure exact audio/video alignment
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor() as executor:
-        durations = list(executor.map(probe_duration, inputs[:-1]))
+        durations = list(executor.map(probe_duration, inputs))
 
     # Build label pairs and filter fragments.
-    # Initially the streams are labelled [0:v]/[0:a], [1:v]/[1:a], …
     filter_parts: list[str] = []
+
+    # Explicitly trim each audio input to match its probed video duration.
+    # This is CRITICAL for preventing drift during acrossfade, which is relative.
+    for i in range(n):
+        filter_parts.append(f"[{i}:a]atrim=end={durations[i]},asetpts=PTS-STARTPTS[a_trim{i}]")
 
     # Running accumulated duration for offset calculation
     cumulative: float = 0.0
 
     current_v = "0:v"
-    current_a = "0:a"
+    current_a = "a_trim0"
 
     for i in range(n - 1):
         next_v = f"{i + 1}:v"
-        next_a = f"{i + 1}:a"
+        next_a = f"a_trim{i + 1}"
 
         out_v = f"vx{i}"
         out_a = f"ax{i}"

@@ -83,8 +83,9 @@ def test_run_dry_run_logs_command(caplog: pytest.LogCaptureFixture) -> None:
     """run(dry_run=True) logs the full ffmpeg command."""
     import logging
 
-    with caplog.at_level(logging.INFO, logger="travel_video.ffmpeg.commands"), patch(
-        "subprocess.run"
+    with (
+        caplog.at_level(logging.INFO, logger="travel_video.ffmpeg.commands"),
+        patch("subprocess.run"),
     ):
         run(["-i", "input.mp4", "output.mp4"], dry_run=True)
 
@@ -147,7 +148,7 @@ def test_probe_duration_calls_ffprobe_with_correct_args() -> None:
     called_args = mock_sub.call_args[0][0]
     assert called_args[0] == "ffprobe"
     assert "-show_entries" in called_args
-    assert "format=duration" in called_args
+    assert "stream=duration" in called_args
     assert "/videos/test.mp4" in called_args
 
 
@@ -178,13 +179,34 @@ def test_probe_duration_raises_on_non_float_output() -> None:
     """probe_duration raises FFmpegError when ffprobe stdout is not parseable as float."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
-    mock_result.stdout = b"N/A"
+    mock_result.stdout = b"invalid"
 
     with (
         patch("subprocess.run", return_value=mock_result),
         pytest.raises(FFmpegError, match="[Cc]ould not parse"),
     ):
         probe_duration(Path("/some/video.mp4"))
+
+
+@pytest.mark.unit
+def test_probe_duration_falls_back_to_format_duration_when_stream_is_na() -> None:
+    """probe_duration falls back to format duration if stream duration is 'N/A'."""
+    mock_stream_res = MagicMock(spec=subprocess.CompletedProcess)
+    mock_stream_res.returncode = 0
+    mock_stream_res.stdout = b"N/A\n"
+
+    mock_format_res = MagicMock(spec=subprocess.CompletedProcess)
+    mock_format_res.returncode = 0
+    mock_format_res.stdout = b"12.5\n"
+
+    with patch("subprocess.run", side_effect=[mock_stream_res, mock_format_res]) as mock_sub:
+        duration = probe_duration(Path("/some/video.mp4"))
+
+    assert duration == 12.5
+    assert mock_sub.call_count == 2
+    second_call_args = mock_sub.call_args_list[1][0][0]
+    assert "-show_entries" in second_call_args
+    assert "format=duration" in second_call_args
 
 
 @pytest.mark.unit
@@ -212,7 +234,7 @@ def test_normalize_clip_builds_correct_args() -> None:
     input_path = Path("/input/clip.mp4")
     output_path = Path("/output/norm.mp4")
     video_filter = "[0:v]scale=1080:1920[v]"
-    audio_filter = "highpass=f=120,afftdn,loudnorm"
+    audio_filter = "highpass=f=120,afftdn,loudnorm,apad"
     encoder = "h264_videotoolbox"
     bitrate = "12M"
 
@@ -254,7 +276,7 @@ def test_normalize_clip_dry_run_does_not_call_subprocess() -> None:
             input_path=Path("/input/clip.mp4"),
             output_path=Path("/output/norm.mp4"),
             video_filter="[0:v]scale=1080:1920[v]",
-            audio_filter="highpass=f=120",
+            audio_filter="highpass=f=120,apad",
             encoder="h264_videotoolbox",
             bitrate="12M",
             dry_run=True,
@@ -278,7 +300,7 @@ def test_normalize_clip_extra_inputs_added_as_i_args() -> None:
     output_path = Path("/output/norm.mp4")
     extra_png = Path("/cache/map.png")
     video_filter = "[0:v]scale=1080:1920[v]"
-    audio_filter = "highpass=f=120"
+    audio_filter = "highpass=f=120,apad"
 
     with patch("subprocess.run", return_value=mock_result) as mock_sub:
         normalize_clip(
@@ -315,7 +337,7 @@ def test_normalize_clip_no_extra_inputs_behaves_as_before() -> None:
             input_path=input_path,
             output_path=output_path,
             video_filter="[0:v]scale=1080:1920[v]",
-            audio_filter="highpass=f=120",
+            audio_filter="highpass=f=120,apad",
             encoder="h264_videotoolbox",
             bitrate="12M",
         )
@@ -391,6 +413,7 @@ def test_concat_with_xfade_two_inputs_xfade_present() -> None:
     full_cmd = " ".join(str(a) for a in called_args)
     assert "xfade" in full_cmd
     assert "acrossfade" in full_cmd
+    assert "atrim" in full_cmd
 
 
 @pytest.mark.unit
@@ -468,8 +491,8 @@ def test_concat_with_xfade_two_inputs_dry_run_does_not_call_subprocess() -> None
 
 
 @pytest.mark.unit
-def test_concat_with_xfade_probes_only_inputs_needed_for_offsets() -> None:
-    """concat_with_xfade probes each input to compute xfade offsets."""
+def test_concat_with_xfade_probes_all_inputs_for_alignment() -> None:
+    """concat_with_xfade probes each input to compute xfade offsets and trim audio."""
     mock_result = MagicMock(spec=subprocess.CompletedProcess)
     mock_result.returncode = 0
 
@@ -493,5 +516,5 @@ def test_concat_with_xfade_probes_only_inputs_needed_for_offsets() -> None:
             bitrate="12M",
         )
 
-    # At minimum the first clip must be probed to compute the offset
-    assert len(probe_calls) >= 1
+    # BOTH clips must be probed now
+    assert len(probe_calls) == 2

@@ -124,7 +124,10 @@ def test_vertical_normalize_rotation_180_horizontal() -> None:
 def test_audio_chain_all_enabled() -> None:
     """Default audio_chain includes highpass, resample, format, denoise, and loudnorm."""
     result = audio_chain(highpass_hz=120, denoise="afftdn", loudnorm=True)
-    assert result == "highpass=f=120,aresample=48000,aformat=channel_layouts=stereo,afftdn,loudnorm"
+    assert (
+        result
+        == "highpass=f=120,aresample=48000:async=1,aformat=channel_layouts=stereo,afftdn,loudnorm,apad"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +139,7 @@ def test_audio_chain_all_enabled() -> None:
 def test_audio_chain_no_loudnorm() -> None:
     """With loudnorm=False, the loudnorm filter is omitted."""
     result = audio_chain(highpass_hz=120, denoise="afftdn", loudnorm=False)
-    assert result == "highpass=f=120,aresample=48000,aformat=channel_layouts=stereo,afftdn"
+    assert result == "highpass=f=120,aresample=48000:async=1,aformat=channel_layouts=stereo,afftdn,apad"
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +151,7 @@ def test_audio_chain_no_loudnorm() -> None:
 def test_audio_chain_no_denoise() -> None:
     """With denoise=None, the denoise filter is omitted."""
     result = audio_chain(highpass_hz=120, denoise=None, loudnorm=True)
-    assert result == "highpass=f=120,aresample=48000,aformat=channel_layouts=stereo,loudnorm"
+    assert result == "highpass=f=120,aresample=48000:async=1,aformat=channel_layouts=stereo,loudnorm,apad"
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +163,7 @@ def test_audio_chain_no_denoise() -> None:
 def test_audio_chain_empty_denoise() -> None:
     """With denoise='', the denoise filter is also omitted."""
     result = audio_chain(highpass_hz=120, denoise="", loudnorm=True)
-    assert result == "highpass=f=120,aresample=48000,aformat=channel_layouts=stereo,loudnorm"
+    assert result == "highpass=f=120,aresample=48000:async=1,aformat=channel_layouts=stereo,loudnorm,apad"
 
 
 # ---------------------------------------------------------------------------

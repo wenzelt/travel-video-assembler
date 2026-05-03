@@ -117,13 +117,14 @@ def audio_chain(
     """
     parts: list[str] = [
         f"highpass=f={highpass_hz}",
-        "aresample=48000",
+        "aresample=48000:async=1",
         "aformat=channel_layouts=stereo",
     ]
     if denoise:
         parts.append(denoise)
     if loudnorm:
         parts.append("loudnorm")
+    parts.append("apad")
     return ",".join(parts)
 
 
