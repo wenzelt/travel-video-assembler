@@ -15,7 +15,7 @@ from travel_video import metadata, planner, renderer, scanner
 from travel_video.config import Config
 from travel_video.deps import check_dependencies
 from travel_video.logging_setup import setup_logging
-from travel_video.models import Clip, DaySeparator
+from travel_video.models import Clip, DaySeparator, TimelineItem
 
 app = typer.Typer(name="travel-video", help="Assemble travel video clips into a polished MKV.")
 console = Console()
@@ -33,6 +33,57 @@ def _fmt_duration(seconds: float) -> str:
     """Format *seconds* as ``MM:SS``."""
     total = int(round(seconds))
     return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _print_timeline(timeline: list[TimelineItem]) -> None:
+    """Print a rich table summarizing the timeline."""
+    table = Table(title="Planned Timeline", show_header=True, header_style="bold cyan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Type", width=10)
+    table.add_column("Date", width=12)
+    table.add_column("Duration", width=8)
+    table.add_column("Resolution", width=12)
+    table.add_column("GPS", width=22)
+    table.add_column("Path")
+
+    clip_number = 0
+    total_duration = 0.0
+    day_set: set[_Date] = set()
+
+    for item in timeline:
+        if isinstance(item, DaySeparator):
+            table.add_row(
+                "—",
+                "[dim]day break[/dim]",
+                str(item.date),
+                "3s",
+                "—",
+                "—",
+                "—",
+                style="dim",
+            )
+        elif isinstance(item, Clip):
+            clip_number += 1
+            total_duration += item.duration_s
+            day_set.add(item.creation_time.date())
+
+            gps = f"{item.gps_lat:.4f}, {item.gps_lon:.4f}" if item.has_gps else "—"
+            table.add_row(
+                str(clip_number),
+                "clip",
+                str(item.creation_time.date()),
+                _fmt_duration(item.duration_s),
+                f"{item.width}x{item.height}",
+                gps,
+                item.path.name,
+            )
+
+    console.print(table)
+    console.print(
+        f"\nTotal clips: [bold]{clip_number}[/bold]  "
+        f"Total days: [bold]{len(day_set)}[/bold]  "
+        f"Total duration: [bold]{_fmt_duration(total_duration)}[/bold]"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -99,17 +150,25 @@ def render(
     timeline = planner.build_timeline(clips)
 
     # --- Print summary --------------------------------------------------------
-    day_set = {c.creation_time.date() for c in clips}
-    console.print(
-        f"Clips: [bold]{len(clips)}[/bold]  "
-        f"Days: [bold]{len(day_set)}[/bold]"
-    )
+    _print_timeline(timeline)
+    console.print()
 
     # --- Render ---------------------------------------------------------------
-    renderer.render(timeline, cfg, output, dry_run=dry_run)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=False,
+    ) as progress:
+        task_id = progress.add_task("Rendering video segments…", total=len(timeline))
+        
+        def _update_progress() -> None:
+            progress.advance(task_id)
+
+        renderer.render(timeline, cfg, output, dry_run=dry_run, progress_callback=_update_progress)
 
     # --- Success message ------------------------------------------------------
-    console.print(f"[green]Output:[/green] {output}")
+    console.print(f"\n[green]✔ Successfully rendered to:[/green] {output}")
 
 
 @app.command()
@@ -158,55 +217,7 @@ def plan(
     timeline = planner.build_timeline(clips)
 
     # --- Render table --------------------------------------------------------
-    table = Table(title="Planned Timeline", show_header=True, header_style="bold cyan")
-    table.add_column("#", style="dim", width=4)
-    table.add_column("Type", width=10)
-    table.add_column("Date", width=12)
-    table.add_column("Duration", width=8)
-    table.add_column("Resolution", width=12)
-    table.add_column("GPS", width=22)
-    table.add_column("Path")
-
-    clip_number = 0
-    total_duration = 0.0
-    day_set: set[_Date] = set()
-
-    for item in timeline:
-        if isinstance(item, DaySeparator):
-            table.add_row(
-                "—",
-                "[dim]day break[/dim]",
-                str(item.date),
-                "3s",
-                "—",
-                "—",
-                "—",
-                style="dim",
-            )
-        elif isinstance(item, Clip):
-            clip_number += 1
-            total_duration += item.duration_s
-            day_set.add(item.creation_time.date())
-
-            gps = f"{item.gps_lat:.4f}, {item.gps_lon:.4f}" if item.has_gps else "—"
-            table.add_row(
-                str(clip_number),
-                "clip",
-                str(item.creation_time.date()),
-                _fmt_duration(item.duration_s),
-                f"{item.width}x{item.height}",
-                gps,
-                item.path.name,
-            )
-
-    console.print(table)
-
-    # --- Summary -------------------------------------------------------------
-    console.print(
-        f"\nTotal clips: [bold]{clip_number}[/bold]  "
-        f"Total days: [bold]{len(day_set)}[/bold]  "
-        f"Total duration: [bold]{_fmt_duration(total_duration)}[/bold]"
-    )
+    _print_timeline(timeline)
 
 
 @app.command()

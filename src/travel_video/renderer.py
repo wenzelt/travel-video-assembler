@@ -24,12 +24,15 @@ from travel_video.overlays import location_label, mini_map
 log = logging.getLogger(__name__)
 
 
+from typing import Callable
+
 def render(
     timeline: list[TimelineItem],
     config: Config,
     output_path: Path,
     *,
     dry_run: bool = False,
+    progress_callback: Callable[[], None] | None = None,
 ) -> None:
     """Render a travel video from *timeline* to *output_path*.
 
@@ -45,6 +48,8 @@ def render(
         Destination path for the final encoded video.
     dry_run:
         When ``True``, all FFmpeg commands are printed but not executed.
+    progress_callback:
+        Optional callback invoked when each segment finishes normalisation/generation.
     """
     segments: list[Path] = []
 
@@ -90,7 +95,7 @@ def render(
             label_idx = 1 if label_result else None
             map_idx = 1 + (1 if label_result else 0) if map_result else None
 
-            return _normalize_clip(
+            res = _normalize_clip(
                 item,
                 config,
                 af,
@@ -103,8 +108,13 @@ def render(
                 dry_run=dry_run,
             )
         elif isinstance(item, DaySeparator):
-            return _generate_separator(sep_cache_key, config, dry_run=dry_run)
-        raise TypeError(f"Unknown timeline item type: {type(item)}")
+            res = _generate_separator(sep_cache_key, config, dry_run=dry_run)
+        else:
+            raise TypeError(f"Unknown timeline item type: {type(item)}")
+            
+        if progress_callback:
+            progress_callback()
+        return res
 
     # Parallelize normalization using a thread pool.
     # FFmpeg is subprocess-based, so threads are fine for I/O and process management.

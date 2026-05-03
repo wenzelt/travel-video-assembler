@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -523,8 +523,8 @@ def test_render_calls_renderer(tmp_path: Path) -> None:
             ],
         )
 
-    assert result.exit_code == 0, result.output
-    mock_renderer.assert_called_once_with(timeline, cfg_obj, output_path, dry_run=False)
+        assert result.exit_code == 0, result.output
+        mock_renderer.assert_called_once_with(timeline, cfg_obj, output_path, dry_run=False, progress_callback=ANY)
 
 
 @pytest.mark.unit
@@ -563,4 +563,4 @@ def test_render_dry_run_flag(tmp_path: Path) -> None:
         )
 
     assert result.exit_code == 0, result.output
-    mock_renderer.assert_called_once_with(timeline, cfg_obj, output_path, dry_run=True)
+    mock_renderer.assert_called_once_with(timeline, cfg_obj, output_path, dry_run=True, progress_callback=ANY)
