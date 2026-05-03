@@ -267,6 +267,7 @@ def _clip_to_dict(clip: Clip) -> dict:
         "rotation": clip.rotation,
         "width": clip.width,
         "height": clip.height,
+        "has_audio": clip.has_audio,
     }
 
 
@@ -281,4 +282,5 @@ def _clip_from_dict(path: Path, data: dict) -> Clip:
         rotation=int(data["rotation"]),
         width=int(data["width"]),
         height=int(data["height"]),
+        has_audio=data.get("has_audio", True),
     )

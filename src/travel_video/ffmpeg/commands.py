@@ -315,7 +315,7 @@ def concat_with_xfade(
     # Explicitly trim each audio input to match its probed video duration.
     # This is CRITICAL for preventing drift during acrossfade, which is relative.
     for i in range(n):
-        filter_parts.append(f"[{i}:a]atrim=end={durations[i]},asetpts=PTS-STARTPTS[a_trim{i}]")
+        filter_parts.append(f"[{i}:a:0]atrim=end={durations[i]},asetpts=PTS-STARTPTS[a_trim{i}]")
 
     # Running accumulated duration for offset calculation
     cumulative: float = 0.0
